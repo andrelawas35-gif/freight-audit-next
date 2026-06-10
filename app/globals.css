@@ -1,0 +1,212 @@
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap");
+
+/* ============================================================
+   Freight Audit Console — design tokens + base
+   Dark-mode default · Bloomberg-dense · keyboard-first
+   ============================================================ */
+
+:root {
+  /* — dark canvas — */
+  --canvas:        oklch(0.18 0.005 80);
+  --surface:       oklch(0.215 0.006 80);
+  --surface-2:     oklch(0.245 0.006 80);
+  --surface-sunk:  oklch(0.20 0.005 80);
+  --hover:         oklch(0.27 0.007 80);
+  --row-hover:     oklch(0.255 0.006 80);
+  --row-active:    oklch(0.295 0.012 75);
+
+  /* — ink (text) — */
+  --ink:           oklch(0.96 0.003 80);
+  --ink-2:         oklch(0.80 0.005 80);
+  --ink-3:         oklch(0.62 0.006 80);
+  --ink-faint:     oklch(0.46 0.005 80);
+
+  /* — hairlines — */
+  --line:          oklch(0.30 0.006 80);
+  --line-2:        oklch(0.265 0.006 80);
+  --line-strong:   oklch(0.36 0.007 80);
+
+  /* — recovery green (dollars won) — */
+  --green:         oklch(0.74 0.15 152);
+  --green-ink:     oklch(0.80 0.16 152);
+  --green-soft:    oklch(0.30 0.05 152);
+  --green-line:    oklch(0.42 0.08 152);
+
+  /* — amber → red urgency scale (deadlines) — */
+  --amber:         oklch(0.78 0.15 70);
+  --amber-ink:     oklch(0.84 0.14 75);
+  --amber-soft:    oklch(0.32 0.06 70);
+  --amber-line:    oklch(0.44 0.09 70);
+
+  --hot:           oklch(0.66 0.21 32);
+  --hot-ink:       oklch(0.78 0.18 30);
+  --hot-soft:      oklch(0.32 0.08 32);
+  --hot-line:      oklch(0.46 0.13 32);
+
+  /* — info blue (neutral states, links) — */
+  --blue:          oklch(0.70 0.14 244);
+  --blue-ink:      oklch(0.78 0.13 244);
+  --blue-soft:     oklch(0.30 0.06 244);
+  --blue-line:     oklch(0.42 0.10 244);
+
+  /* — violet (submitted stage) — */
+  --violet:        oklch(0.70 0.14 295);
+  --violet-ink:    oklch(0.80 0.13 295);
+  --violet-soft:   oklch(0.30 0.06 295);
+  --violet-line:   oklch(0.42 0.09 295);
+
+  --accent:        var(--amber);
+
+  --radius:        8px;
+  --radius-sm:     5px;
+  --radius-lg:     11px;
+  --shadow-sm:     0 1px 2px oklch(0 0 0 / 0.30);
+  --shadow:        0 4px 12px oklch(0 0 0 / 0.35), 0 1px 2px oklch(0 0 0 / 0.25);
+  --shadow-lg:     0 20px 50px oklch(0 0 0 / 0.55), 0 8px 16px oklch(0 0 0 / 0.30);
+
+  --font:  'Hanken Grotesk', system-ui, sans-serif;
+  --mono:  'JetBrains Mono', ui-monospace, monospace;
+
+  --sidebar-w: 188px;
+  --topbar-h:  44px;
+  --statbar-h: 36px;
+  --row-h:     30px;
+}
+
+/* light theme override */
+[data-theme="light"] {
+  --canvas:        oklch(0.985 0.004 80);
+  --surface:       oklch(1 0 0);
+  --surface-2:     oklch(0.975 0.005 80);
+  --surface-sunk:  oklch(0.965 0.006 78);
+  --hover:         oklch(0.955 0.006 78);
+  --row-hover:     oklch(0.965 0.006 78);
+  --row-active:    oklch(0.94 0.012 75);
+
+  --ink:           oklch(0.26 0.012 70);
+  --ink-2:         oklch(0.46 0.012 70);
+  --ink-3:         oklch(0.62 0.010 70);
+  --ink-faint:     oklch(0.74 0.008 70);
+
+  --line:          oklch(0.918 0.006 78);
+  --line-2:        oklch(0.945 0.005 80);
+  --line-strong:   oklch(0.86 0.008 75);
+
+  --green:         oklch(0.58 0.12 152);
+  --green-ink:     oklch(0.46 0.11 152);
+  --green-soft:    oklch(0.95 0.04 152);
+  --green-line:    oklch(0.88 0.06 152);
+
+  --amber:         oklch(0.74 0.14 70);
+  --amber-ink:     oklch(0.56 0.13 62);
+  --amber-soft:    oklch(0.955 0.045 78);
+  --amber-line:    oklch(0.88 0.08 75);
+
+  --hot:           oklch(0.60 0.19 32);
+  --hot-ink:       oklch(0.52 0.19 30);
+  --hot-soft:      oklch(0.955 0.035 36);
+  --hot-line:      oklch(0.87 0.09 34);
+
+  --blue:          oklch(0.58 0.11 244);
+  --blue-ink:      oklch(0.50 0.12 250);
+  --blue-soft:     oklch(0.955 0.03 248);
+  --blue-line:     oklch(0.88 0.05 248);
+
+  --violet:        oklch(0.56 0.13 295);
+  --violet-ink:    oklch(0.48 0.13 295);
+  --violet-soft:   oklch(0.955 0.03 295);
+  --violet-line:   oklch(0.88 0.05 295);
+
+  --shadow-sm:     0 1px 2px oklch(0.4 0.02 70 / 0.06);
+  --shadow:        0 2px 6px oklch(0.4 0.02 70 / 0.07), 0 1px 2px oklch(0.4 0.02 70 / 0.05);
+  --shadow-lg:     0 12px 32px oklch(0.35 0.02 70 / 0.12), 0 4px 10px oklch(0.35 0.02 70 / 0.07);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-size: 13px;
+}
+html, body { height: 100vh; overflow: hidden; }
+
+::selection { background: oklch(0.74 0.14 70 / 0.35); }
+
+/* scrollbars — thin */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 20px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); background-clip: padding-box; border: 2px solid transparent; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.mono { font-family: var(--mono); font-feature-settings: "tnum" 1; }
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* table primitive */
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; }
+.tbl thead th {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--surface-2);
+  font-size: 10px; font-weight: 600;
+  color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left; white-space: nowrap;
+}
+.tbl tbody tr { transition: background 0.06s; cursor: pointer; }
+.tbl tbody tr:hover { background: var(--row-hover); }
+.tbl tbody tr.active { background: var(--row-active); }
+.tbl tbody td {
+  padding: 0 10px; height: var(--row-h);
+  border-bottom: 1px solid var(--line-2);
+  font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tbl tbody tr.active td { box-shadow: inset 2px 0 0 var(--amber); }
+.tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+.tbl td.mono { font-family: var(--mono); }
+
+/* tighter card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* animations */
+@keyframes drawerIn { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes faRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes faFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes faPulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.66 0.21 32 / 0.0); }
+  50%      { box-shadow: 0 0 0 4px oklch(0.66 0.21 32 / 0.18); }
+}
+@keyframes faBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes paletteIn { from { opacity: 0; transform: translate(-50%, -8px) scale(0.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+
+/* keyboard hint key */
+.kbd {
+  font-family: var(--mono);
+  font-size: 10.5px; font-weight: 600;
+  padding: 1px 5px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--ink-2);
+  line-height: 1.2;
+  display: inline-block;
+}
