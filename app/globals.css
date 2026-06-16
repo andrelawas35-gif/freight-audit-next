@@ -55,25 +55,110 @@
   --violet-soft:   oklch(0.30 0.06 295);
   --violet-line:   oklch(0.42 0.09 295);
 
+   /* ── Semantic alias ─────────────────────────────────────── */
+  --accent:        var(--amber);
+  --accent-ink:    var(--amber-ink);
+  --accent-soft:   var(--amber-soft);
+  --accent-line:   var(--amber-line);
+
+  --success:       var(--green);
+  --success-ink:   var(--green-ink);
+  --success-soft:  var(--green-soft);
+  --success-line:  var(--green-line);
+
+  --danger:        var(--hot);
+  --danger-ink:    var(--hot-ink);
+  --danger-soft:   var(--hot-soft);
+  --danger-line:   var(--hot-line);
+
+  --warning:       var(--amber);
+  --warning-ink:   var(--amber-ink);
+  --warning-soft:  var(--amber-soft);
+  --warning-line:  var(--amber-line);
+
+  --info:          var(--blue);
+  --info-ink:      var(--blue-ink);
+  --info-soft:     var(--blue-soft);
+  --info-line:     var(--blue-line);
+
   --accent:        var(--amber);
 
-  --radius:        8px;
+
+
+   /* ── Selection highlight ────────────────────────────────── */
+  --selection:     oklch(0.74 0.14 70 / 0.35);
+
+
+    /* ── Spacing scale ──────────────────────────────────────── */
+  --sp-1:    2px;
+  --sp-2:    4px;
+  --sp-3:    6px;
+  --sp-4:    8px;
+  --sp-5:    10px;
+  --sp-6:    12px;
+  --sp-7:    14px;
+  --sp-8:    16px;
+  --sp-10:   20px;
+  --sp-12:   24px;
+  --sp-16:   32px;
+  --sp-20:   40px;
+  --sp-24:   48px;
+
+  /* ── Border radii ───────────────────────────────────────── */
+  --radius-xs:     3px;
   --radius-sm:     5px;
+  --radius:        8px;
   --radius-lg:     11px;
+  --radius-pill:   9999px;
+
+  /* ── Shadows (dark theme) ───────────────────────────────── */
   --shadow-sm:     0 1px 2px oklch(0 0 0 / 0.30);
   --shadow:        0 4px 12px oklch(0 0 0 / 0.35), 0 1px 2px oklch(0 0 0 / 0.25);
   --shadow-lg:     0 20px 50px oklch(0 0 0 / 0.55), 0 8px 16px oklch(0 0 0 / 0.30);
 
-  --font:  'Hanken Grotesk', system-ui, sans-serif;
-  --mono:  'JetBrains Mono', ui-monospace, monospace;
+  /* ── Layout dimensions ──────────────────────────────────── */
+  --sidebar-w:     188px;
+  --topbar-h:      44px;
+  --statbar-h:     36px;
+  --row-h:         30px;
 
-  --sidebar-w: 188px;
-  --topbar-h:  44px;
-  --statbar-h: 36px;
-  --row-h:     30px;
+    /* ── Font families ──────────────────────────────────────── */
+  --font:          'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --mono:          'JetBrains Mono', ui-monospace, 'SF Mono', monospace; /* @kind font */
+
+  /* ── Font sizes (dense data UI) ─────────────────────────── */
+  --text-xs:       9.5px;
+  --text-sm:       10.5px;
+  --text-base:     12.5px;
+  --text-md:       13px;
+  --text-lg:       14px;
+  --text-xl:       18px;
+  --text-2xl:      22px;
+  --text-3xl:      28px;
+
+  /* ── Font weights ───────────────────────────────────────── */
+  --weight-light:  300;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semi:   600;
+  --weight-bold:   700;
+
+  /* ── Line heights ───────────────────────────────────────── */
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.45;
+  --leading-relaxed: 1.6;
+
+  /* ── Letter spacing ─────────────────────────────────────── */
+  --tracking-tight:  -0.005em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+  --tracking-caps:   0.06em;
+  --tracking-ultra:  0.08em;
 }
 
-/* light theme override */
+
+/* ── Light theme override ─────────────────────────────────── */
 [data-theme="light"] {
   --canvas:        oklch(0.985 0.004 80);
   --surface:       oklch(1 0 0);
@@ -120,6 +205,8 @@
   --shadow-sm:     0 1px 2px oklch(0.4 0.02 70 / 0.06);
   --shadow:        0 2px 6px oklch(0.4 0.02 70 / 0.07), 0 1px 2px oklch(0.4 0.02 70 / 0.05);
   --shadow-lg:     0 12px 32px oklch(0.35 0.02 70 / 0.12), 0 4px 10px oklch(0.35 0.02 70 / 0.07);
+
+  --selection:     oklch(0.74 0.14 70 / 0.25);
 }
 
 * { box-sizing: border-box; }

@@ -30,7 +30,8 @@ try {
   }
   
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1340, margin: '0 auto' }}>
+     
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
         {carriers.map((c) => (
           <div key={c.id} className="card" style={{ padding: 14 }}>
