@@ -23,7 +23,7 @@ import { useState, useEffect, useRef, useTransition } from 'react';
 import { fmtUSD, fmtDate, fmtDateFull, daysUntil } from '@/lib/format';
 import {
   RuleTag, ruleName, StatusEdit, DeadlineChip, CarrierMark, ConfMark,
-  Checkbox, Btn, Glyph, Segmented, FilterChip, FilterPopover,
+  Checkbox, Btn, Glyph, Segmented, FilterChip, FilterPopover, Card, KPI, Bars, SectionLabel, StatBar,
   type Confidence,
 } from '@/components/ui/primitives';
 import { templateFor } from '@/lib/templates';
