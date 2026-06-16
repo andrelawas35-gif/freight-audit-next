@@ -14,6 +14,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { Glyph } from '@/components/ui/primitives';
 
 const NAV = [
   { href: '/',          label: 'Today',    glyph: 'home',  kbd: '1' },
@@ -23,23 +24,6 @@ const NAV = [
   { href: '/clients',   label: 'Clients',  glyph: 'users', kbd: '5' },
 ];
 
-function Glyph({ name, size = 15 }: { name: string; size?: number }) {
-  const s = {
-    width: size, height: size, fill: 'none', stroke: 'currentColor',
-    strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
-  };
-  const paths: Record<string, React.ReactNode> = {
-    home:   <path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-7H9v7H5a1 1 0 0 1-1-1z" />,
-    flag:   <path d="M5 21V4M5 4h11l-2 4 2 4H5" />,
-    gavel:  <><path d="M14 13l-7 7M11 6l6 6M9 4l6 6-3 3-6-6zM17 14l3 3" /></>,
-    truck:  <><path d="M2 17V6h12v11M14 10h4l3 4v3h-3M5 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" /></>,
-    users:  <><circle cx="8" cy="8" r="3.2" /><path d="M2.5 20a5.5 5.5 0 0 1 11 0M16 6.2a3.2 3.2 0 0 1 0 5.6M18.5 20a5.5 5.5 0 0 0-3-4.9" /></>,
-    search: <><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-3.5-3.5" /></>,
-    moon:   <path d="M20 14a8 8 0 0 1-10-10 8 8 0 1 0 10 10z" />,
-    sun:    <><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4" /></>,
-  };
-  return <svg viewBox="0 0 24 24" style={s}>{paths[name]}</svg>;
-}
 
 export function Sidebar() {
   const pathname = usePathname();

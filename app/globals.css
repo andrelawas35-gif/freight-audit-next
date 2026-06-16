@@ -81,7 +81,7 @@
   --info-soft:     var(--blue-soft);
   --info-line:     var(--blue-line);
 
-  --accent:        var(--amber);
+ 
 
 
 
@@ -206,7 +206,8 @@
   --shadow:        0 2px 6px oklch(0.4 0.02 70 / 0.07), 0 1px 2px oklch(0.4 0.02 70 / 0.05);
   --shadow-lg:     0 12px 32px oklch(0.35 0.02 70 / 0.12), 0 4px 10px oklch(0.35 0.02 70 / 0.07);
 
-  --selection:     oklch(0.74 0.14 70 / 0.25);
+ ::selection { background: var(--selection); }
+
 }
 
 * { box-sizing: border-box; }
