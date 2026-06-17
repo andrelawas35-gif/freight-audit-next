@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { fmtUSD, fmtDate, daysUntil } from '@/lib/format';
 
+import { Card, SectionLabel, Btn, RuleTag, CarrierMark, StagePill, DeadlineChip, Checkbox } from '@/components/ui/primitives';
 export function ActionQueue({ auditResults, disputes }: {
   auditResults: any[];
   disputes: any[];
@@ -35,18 +36,37 @@ export function ActionQueue({ auditResults, disputes }: {
     (d) => !['Won', 'Closed'].includes(d['Status'] || '')
   );
 
+
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* ── Flagged audits needing review ── */}
-      <div className="card" style={{ overflow: 'hidden' }}>
+      <Card pad={0} style={{ overflow: 'hidden' }}>
         <div style={{
           padding: '10px 14px', borderBottom: '1px solid var(--line)',
           display: 'flex', alignItems: 'center', gap: 11,
+          background: 'linear-gradient(180deg, var(--amber-soft), transparent 220%)',
         }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: 6, background: 'var(--amber-soft)',
+            border: '1px solid var(--amber-line)', display: 'grid', placeItems: 'center', flexShrink: 0,
+          }}>
+            <svg viewBox="0 0 24 24" style={{ width: 13, height: 13, fill: 'none', stroke: 'var(--amber-ink)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>
+          </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700 }}>Flagged audits — needs review</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Flagged audits · awaiting review</div>
             <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 1 }}>
-              {needsAction.length} items · {fmtUSD(needsAction.reduce((s, a) => s + (a['Variance'] || 0), 0))} recoverable
+              Today's batch. Sorted by dollar value.
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div className="mono tnum" style={{ fontSize: 13.5, fontWeight: 700 }}>{needsAction.length}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>items</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="mono tnum" style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--green-ink)' }}>{fmtUSD(needsAction.reduce((s, a) => s + Math.max(0, (a['Billed amount'] || 0) - (a['Expected amount'] || 0)), 0))}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>exposure</div>
             </div>
           </div>
           {selected.size > 0 && (
@@ -84,11 +104,10 @@ export function ActionQueue({ auditResults, disputes }: {
               needsAction.map((a) => (
                 <tr key={a.id} className={selected.has(a.id) ? 'active' : ''}>
                   <td style={{ textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
+                     <Checkbox
                       checked={selected.has(a.id)}
                       onChange={() => toggleSelect(a.id)}
-                      style={{ cursor: 'pointer' }}
+                      ariaLabel={`select ${a.id}`}
                     />
                   </td>
                   <td className="mono" style={{ fontSize: 11 }}>
@@ -106,21 +125,30 @@ export function ActionQueue({ auditResults, disputes }: {
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
+
 
       {/* ── Open disputes ── */}
-      <div className="card" style={{ overflow: 'hidden' }}>
+      <Card pad={0} style={{ overflow: 'hidden' }}>
         <div style={{
           padding: '10px 14px', borderBottom: '1px solid var(--line)',
           display: 'flex', alignItems: 'center', gap: 11,
+          background: 'linear-gradient(180deg, var(--blue-soft), transparent 220%)',
         }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: 6, background: 'var(--blue-soft)',
+            border: '1px solid var(--blue-line)', display: 'grid', placeItems: 'center', flexShrink: 0,
+          }}>
+            <svg viewBox="0 0 24 24" style={{ width: 13, height: 13, fill: 'none', stroke: 'var(--blue-ink)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          </span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700 }}>Open disputes</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Open disputes</div>
             <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 1 }}>
               {openDisputes.length} active · {fmtUSD(openDisputes.reduce((s, d) => s + (d['Disputed amount'] || 0), 0))} pending
             </div>
           </div>
         </div>
+
 
         <table className="tbl">
           <thead>
@@ -146,7 +174,7 @@ export function ActionQueue({ auditResults, disputes }: {
                     {d['Dispute ID'] || d.id.slice(0, 8)}
                   </td>
                   <td>
-                    <StatusBadge status={d['Status']} />
+                    <StagePill stage={d['Status'] || 'Open'} />
                   </td>
                   <td className="num mono" style={{ fontWeight: 600 }}>
                     {fmtUSD(d['Disputed amount'] || 0, true)}
@@ -158,10 +186,12 @@ export function ActionQueue({ auditResults, disputes }: {
             )}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
+
+
 
 function StatusBadge({ status }: { status?: string }) {
   const colors: Record<string, { bg: string; color: string }> = {
@@ -172,6 +202,7 @@ function StatusBadge({ status }: { status?: string }) {
     'Won':        { bg: 'var(--green-soft)', color: 'var(--green-ink)' },
     'Closed':     { bg: 'var(--surface-sunk)', color: 'var(--ink-3)' },
   };
+
   const c = colors[status || ''] || colors['Open'];
   return (
     <span style={{
@@ -183,3 +214,5 @@ function StatusBadge({ status }: { status?: string }) {
     </span>
   );
 }
+
+

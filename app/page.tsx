@@ -142,14 +142,14 @@ export default async function TodayPage() {
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       
     
-      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
         
         {auditResults.length === 0 && disputes.length === 0 ? (
           <EmptyState />
         ) : (
           <>
             {/* 3. Add the KPI Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
               <KPI 
                 label="Recovered This Month" 
                 tone="green" 
@@ -171,9 +171,15 @@ export default async function TodayPage() {
                 sub="New anomalies flagged"
               />
             </div>
+                <KPI 
+                label="Win Rate" 
+                tone="green"
+                value={`${Math.round(stats.winRate * 100)}%`}
+                sub="across resolved disputes"
+              />
 
             {/* 4. Add the Chart & Pipeline Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <Card>
                 <SectionLabel>Recovery Trend (Last 6 Months)</SectionLabel>
                 {chartValues.length > 0 ? (
@@ -193,22 +199,9 @@ export default async function TodayPage() {
                 )}
               </Card>
 
-              <Card>
-                <SectionLabel>Dispute Pipeline</SectionLabel>
-                <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
-                    <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>Currently Open</span>
-                    <span className="mono" style={{ fontWeight: 600, fontSize: 16 }}>{statusCounts.open}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
-                    <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>Successfully Won</span>
-                    <span className="mono" style={{ fontWeight: 600, fontSize: 16, color: 'var(--green-ink)' }}>{statusCounts.won}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>Dismissed / Lost</span>
-                    <span className="mono" style={{ fontWeight: 600, fontSize: 16, color: 'var(--ink-faint)' }}>{statusCounts.dismissed}</span>
-                  </div>
-                </div>
+            <Card>
+                <SectionLabel>Open exposure by rule</SectionLabel>
+                <RuleBreakdown auditResults={auditResults} />
               </Card>
             </div>
 
@@ -245,5 +238,49 @@ function EmptyState() {
         Then run your audit scripts to generate results.
       </div>
     </div>
+  );
+}
+
+function RuleBreakdown({ auditResults }: { auditResults: any[] }) {
+  const RULES: Record<string, { name: string; hue: number }> = {
+    DIM_WEIGHT_TRAP:     { name: 'Dim-weight trap',     hue: 280 },
+    PHANTOM_ACCESSORIAL: { name: 'Phantom accessorial', hue: 50  },
+    DUPLICATE_TRACKING:  { name: 'Duplicate tracking',  hue: 152 },
+    SLA_FAILURE:         { name: 'SLA failure',         hue: 220 },
+    LTL_SLA_FAILURE:     { name: 'LTL SLA failure',     hue: 244 },
+  };
+  const buckets = Object.entries(RULES).map(([key, r]) => {
+    const matching = auditResults.filter(a => {
+      const notes = (a['Notes'] || '').toLowerCase();
+      if (key === 'DIM_WEIGHT_TRAP') return notes.includes('dim') || notes.includes('divisor');
+      if (key === 'PHANTOM_ACCESSORIAL') return notes.includes('residential') || notes.includes('surcharge');
+      if (key === 'DUPLICATE_TRACKING') return notes.includes('duplicate');
+      if (key === 'SLA_FAILURE') return notes.includes('guarantee') || notes.includes('sla');
+      if (key === 'LTL_SLA_FAILURE') return notes.includes('business days');
+      return false;
+    });
+    const amt = matching.reduce((s, a) => s + Math.max(0, (a['Billed amount'] || 0) - (a['Expected amount'] || 0)), 0);
+    return { key, name: r.name, hue: r.hue, n: matching.length, amt };
+  });
+  const totalAmt = buckets.reduce((a, b) => a + b.amt, 0) || 1;
+
+  return (
+    <>
+      <div style={{ display: 'flex', height: 7, borderRadius: 4, overflow: 'hidden', marginBottom: 12, background: 'var(--surface-sunk)' }}>
+        {buckets.map(r => r.amt > 0 && (
+          <div key={r.key} style={{ width: `${(r.amt / totalAmt) * 100}%`, background: `oklch(0.68 0.14 ${r.hue})` }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {buckets.map(r => (
+          <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 9, background: `oklch(0.68 0.14 ${r.hue})`, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 500, flex: 1 }}>{r.name}</span>
+            <span className="mono tnum" style={{ fontSize: 11, color: 'var(--ink-3)' }}>{r.n}</span>
+            <span className="mono tnum" style={{ fontSize: 12, fontWeight: 700, width: 60, textAlign: 'right' }}>{fmtUSD(r.amt)}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

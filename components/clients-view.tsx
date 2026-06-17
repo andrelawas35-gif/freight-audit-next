@@ -29,6 +29,7 @@ export function ClientsView({
           value={fmtUSD(totals.recoveredMTD)}
           sub="This month across active contracts"
         />
+        
         <KPI 
           label="Gain-share earned" tone="blue" accentBar="var(--blue)"
           value={fmtUSD(totals.gainShare)}
