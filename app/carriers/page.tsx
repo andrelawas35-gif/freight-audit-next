@@ -38,11 +38,12 @@ export default async function CarriersPage() {
   const scorecards = carriers.map(c => {
     // Logic to filter disputes for this carrier
     const cDisputes = disputes.filter(d => {
-       // Logic: Check if dispute is linked to this carrier
-       // (Example: if your Disputes have a carrier record ID)
-       return true; 
-    });
-    
+        const carrierField = d['Carrier'];
+        // If it's a linked record array, check if it contains this carrier's record ID
+        if (Array.isArray(carrierField)) return carrierField.includes(c.id);
+        // If it's a text/SCAC field
+        return carrierField === c.SCAC;
+      });
     const totalRecovered = cDisputes.reduce((a, b) => a + (b['Recovery amount'] || 0), 0);
     const winRate = cDisputes.filter(d => d['Status'] === 'Won').length / Math.max(1, cDisputes.length);
 

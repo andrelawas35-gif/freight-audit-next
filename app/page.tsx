@@ -233,26 +233,7 @@ export default async function TodayPage() {
 
 // ── small helper components (server-rendered, no interactivity) ──
 
-function StatItem({ label, value, tone, sub, last }: {
-  label: string; value: string; tone: string; sub?: string; last?: boolean;
-}) {
-  return (
-    <div style={{
-      padding: '0 14px',
-      borderRight: last ? 'none' : '1px solid var(--line)',
-      display: 'flex', alignItems: 'center', gap: 9, minWidth: 0,
-    }}>
-      <span style={{
-        fontSize: 9.5, fontWeight: 600, color: 'var(--ink-faint)',
-        textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap',
-      }}>{label}</span>
-      <span className="mono tnum" style={{
-        fontSize: 12.5, fontWeight: 700, color: tone, whiteSpace: 'nowrap',
-      }}>{value}</span>
-      {sub && <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{sub}</span>}
-    </div>
-  );
-}
+
 
 function EmptyState() {
   return (

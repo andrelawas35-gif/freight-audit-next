@@ -195,7 +195,7 @@ export default async function DisputesPage() {
       <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
         
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Disputes Pipeline</h1>
+       
           <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>
             Manage and track active recovery claims
           </div>

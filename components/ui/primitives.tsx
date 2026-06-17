@@ -283,11 +283,12 @@ export function Checkbox({ checked, indeterminate, onChange, ariaLabel }: {
 }
 
 // ── Button ───────────────────────────────────────────────────────
-type BtnVariant = 'primary' | 'ghost' | 'green' | 'amber'| 'secondary';
+type BtnVariant = 'default' | 'ghost' | 'green' | 'amber' | 'primary';
+
 type BtnSize = 'sm' | 'md';
 
 export function Btn({
-  children, variant = 'primary', size = 'md', onClick, style, ...rest
+  children, variant = 'default', size = 'md', onClick, style, ...rest
 }: {
   children: React.ReactNode; variant?: BtnVariant; size?: BtnSize;
   onClick?: (e: React.MouseEvent) => void; style?: React.CSSProperties;
@@ -708,5 +709,5 @@ export function FilterPopover({ label, options, selected, onToggle }: {
     </div>
   );
 }
-export { Confidence };
+export type{ Confidence };
 

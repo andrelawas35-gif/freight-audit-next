@@ -482,9 +482,7 @@ function eventForStage(stage: string, date: string): TrailEvent {
     default:          return { kind: 'opened',    date, actor: 'Team', note: stage };
   }
 }
-function onAddNote(d: DisputeRow, arg1: any) {
-  throw new Error('Function not implemented.');
-}
+
 
 function setNoteInput(arg0: string) {
   throw new Error('Function not implemented.');
