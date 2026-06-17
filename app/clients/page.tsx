@@ -1,64 +1,115 @@
 /*
   app/clients/page.tsx — Client gain-share portfolio.
-  
-  Replace with your screen_clients.jsx UI.
+
+  Data flow:
+    1. Fetch Clients, Disputes in parallel
+    2. Match disputes to clients
+    3. Compute per-client stats (MTD, YTD, Gain-share, win rate)
+    4. Pass to interactive ClientsView for the two-pane layout
 */
 
 import { fetchRecords } from '@/lib/airtable';
-import { fmtUSD } from '@/lib/format';
+import { ClientsView } from '@/components/clients-view';
 
 export const dynamic = 'force-dynamic';
 
+// ── Types for computed scorecard ─────────────────────────────────
+export type ClientScorecard = {
+  id: string;
+  name: string;
+  active: boolean;
+  gainSharePct: number;
+  lastAudit: string;
+  threshold: number;
+  disputeCount: number;
+  winCount: number;
+  winRate: number;
+  recoveredMTD: number;
+  recoveredYTD: number;
+  totalRecovered: number;
+  gainShareEarned: number;
+};
 
 export default async function ClientsPage() {
-  let clients: any[] = [];
+  let scorecards: ClientScorecard[] = [];
 
   try {
-    clients = await fetchRecords('Clients', {
-  maxRecords: 50,
-});
+    const [clientsRaw, disputesRaw] = await Promise.all([
+      fetchRecords('Clients', { maxRecords: 100 }),
+      fetchRecords('Disputes', { maxRecords: 1000 }),
+    ]);
+
+    // ── Timeframes for MTD / YTD calculations ──────────────────
+    const now = new Date();
+    const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
+    const currentYear = now.toISOString().slice(0, 4);  // YYYY
+
+    // ── Build per-client scorecards ────────────────────────────
+    scorecards = (clientsRaw as any[]).map(c => {
+      const id = c.id;
+      const name = c['Company name'] || 'Unknown';
+      const active = c['Contract active'] || false;
+      const gainSharePct = c['Gain share pct'] || 0;
+
+      // Match disputes to this client
+      const cDisputes = (disputesRaw as any[]).filter(d => {
+        const dClient = d['Client'] || d['Clients'] || [];
+        // Handle Airtable linked records which come back as arrays
+        return Array.isArray(dClient) ? dClient.includes(id) : dClient === id;
+      });
+
+      const won = cDisputes.filter(d => d['Status'] === 'Won');
+      const resolved = cDisputes.filter(d => ['Won', 'Closed'].includes(d['Status'] || ''));
+
+      let recoveredMTD = 0;
+      let recoveredYTD = 0;
+      let totalRecovered = 0;
+
+      won.forEach(d => {
+        const amt = d['Recovery amount'] || 0;
+        const date = d['Date resolved'] || d['Resolved date'] || '';
+        
+        totalRecovered += amt;
+        if (date.startsWith(currentMonth)) recoveredMTD += amt;
+        if (date.startsWith(currentYear)) recoveredYTD += amt;
+      });
+
+      return {
+        id,
+        name,
+        active,
+        gainSharePct,
+        lastAudit: c['Last audit run'] || '—',
+        threshold: c['Min invoice threshold'] || 0,
+        disputeCount: cDisputes.length,
+        winCount: won.length,
+        winRate: resolved.length > 0 ? won.length / resolved.length : 0,
+        recoveredMTD,
+        recoveredYTD,
+        totalRecovered,
+        gainShareEarned: totalRecovered * (gainSharePct / 100),
+      };
+    });
+
+    // Sort active clients to the top, then by recovery volume
+    scorecards.sort((a, b) => {
+      if (a.active === b.active) return b.totalRecovered - a.totalRecovered;
+      return a.active ? -1 : 1;
+    });
+
   } catch (err) {
-    console.error('Failed to fetch clients:', err);
+    console.error('Failed to fetch clients data:', err);
   }
 
-  return (
-    <div style={{ padding: 16 }}>
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Client</th>
-              <th>Gain share</th>
-              <th>Active</th>
-              <th>Last audit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((c) => (
-              <tr key={c.id}>
-                <td style={{ fontWeight: 600 }}>{c['Company name'] || '—'}</td>
-                <td className="mono">{c['Gain share pct'] ? c['Gain share pct'] + '%' : '—'}</td>
-                <td>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: 4, display: 'inline-block',
-                    background: c['Contract active'] ? 'var(--green)' : 'var(--ink-faint)',
-                  }} />
-                </td>
-                <td className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                  {c['Last audit run'] || '—'}
-                </td>
-              </tr>
-            ))}
-            {clients.length === 0 && (
-              <tr>
-                <td colSpan={4} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 20 }}>
-                  No clients. Add your first client in Airtable.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+  // ── Aggregate totals ────────────────────────────────────────
+  const totals = scorecards.reduce(
+    (acc, c) => ({
+      recoveredMTD: acc.recoveredMTD + c.recoveredMTD,
+      recoveredYTD: acc.recoveredYTD + c.recoveredYTD,
+      gainShare: acc.gainShare + c.gainShareEarned,
+    }),
+    { recoveredMTD: 0, recoveredYTD: 0, gainShare: 0 }
   );
+
+  return <ClientsView scorecards={scorecards} totals={totals} />;
 }

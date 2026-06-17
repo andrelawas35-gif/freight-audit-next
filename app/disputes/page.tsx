@@ -184,13 +184,7 @@ export default async function DisputesPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       
-      {/* Top StatBar Strip */}
-      <StatBar items={[
-        { label: 'Total Disputes', value: rows.length },
-        { label: 'Active Pipeline', value: statusCounts.open, tone: 'var(--amber-ink)' },
-        { label: 'Won', value: statusCounts.won, tone: 'var(--green-ink)' },
-        { label: 'Closed/Lost', value: statusCounts.closed, tone: 'var(--ink-faint)' },
-      ]} />
+    
 
       <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
         

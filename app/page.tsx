@@ -141,14 +141,7 @@ export default async function TodayPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       
-      {/* 2. Replace manual StatItem with your actual StatBar primitive */}
-      <StatBar items={[
-        { label: 'Recovered MTD', value: fmtUSD(stats.wonMTD), tone: 'var(--green-ink)' },
-        { label: 'Open Exposure', value: fmtUSD(stats.openDisputed), tone: 'var(--amber-ink)' },
-        { label: 'Win Rate', value: `${Math.round(stats.winRate * 100)}%`, tone: 'var(--green-ink)' },
-        { label: 'Queue', value: `${stats.flaggedNew} new`, tone: 'var(--ink)' },
-      ]} />
-
+    
       <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
         
         {auditResults.length === 0 && disputes.length === 0 ? (

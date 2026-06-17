@@ -8,9 +8,11 @@
   Navigation is handled by file-based routing, not useState.
 */
 
+// @ts-ignore
 import './globals.css';
 import { Sidebar } from '@/components/sidebar';
 import { Topbar } from '@/components/topbar';
+import GlobalStatBar from '@/components/global-stat-bar'; // 1. Import the new global component
 
 export const metadata = {
   title: 'Reclaim · Freight Audit Console',
@@ -27,6 +29,7 @@ export default function RootLayout({
         <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
           <Sidebar />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
+            <GlobalStatBar />
             <Topbar />
             <main style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
               {children}
