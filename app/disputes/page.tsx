@@ -195,27 +195,27 @@ export default async function DisputesPage() {
           </div>
         </div>
 
-        {/* KPI Row */}
+       {/* KPI Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
           <KPI 
             label="Total Disputed" 
             tone="ink" 
             accentBar="var(--blue)"
-            value={<Ticker value={totalDisputed} format={(v) => fmtUSDsafe(v)} />} 
+            value={fmtUSDsafe(totalDisputed)} 
             sub="All time volume"
           />
           <KPI 
             label="Open Exposure" 
             tone="amber" 
             accentBar="var(--amber)"
-            value={<Ticker value={Math.max(0, openExposure)} format={(v) => fmtUSDsafe(v)} />} 
+            value={fmtUSDsafe(Math.max(0, openExposure))} 
             sub="Awaiting resolution"
           />
           <KPI 
             label="Total Recovered" 
             tone="green" 
             accentBar="var(--green)"
-            value={<Ticker value={totalRecovered} format={(v) => fmtUSDsafe(v)} />} 
+            value={fmtUSDsafe(totalRecovered)} 
             sub="Successfully won"
           />
         </div>

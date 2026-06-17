@@ -10,7 +10,7 @@ export default async function GlobalStatBar() {
     // We only fetch the 3 fields needed for global math to keep this lightning fast
     disputes = await fetchRecords('Disputes', {
       maxRecords: 1000,
-      fields: ['Status', 'Disputed amount', 'Recovery amount']
+      fields: ['Status', 'Disputed amount', 'Recovery Amount']
     }) as Dispute[];
   } catch (err) {
     console.error('Failed to fetch global stats:', err);
@@ -23,7 +23,7 @@ export default async function GlobalStatBar() {
   disputes.forEach(d => {
     const status = d['Status'] || 'Open';
     const disputed = d['Disputed amount'] || 0;
-    const recovered = d['Recovery amount'] || 0;
+    const recovered = d['Recovery Amount'] || 0;
 
     if (status === 'Won') {
       totalRecovered += recovered;

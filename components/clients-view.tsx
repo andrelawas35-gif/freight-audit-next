@@ -26,17 +26,17 @@ export function ClientsView({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         <KPI 
           label="Portfolio recovered MTD" tone="green" accentBar="var(--green)"
-          value={<Ticker value={totals.recoveredMTD} format={fmtUSD} />} 
+          value={fmtUSD(totals.recoveredMTD)}
           sub="This month across active contracts"
         />
         <KPI 
           label="Gain-share earned" tone="blue" accentBar="var(--blue)"
-          value={<Ticker value={totals.gainShare} format={fmtUSD} />} 
+          value={fmtUSD(totals.gainShare)}
           sub="All time revenue generated"
         />
         <KPI 
           label="Recovered YTD" tone="ink" 
-          value={<Ticker value={totals.recoveredYTD} format={fmtUSD} />} 
+          value={fmtUSD(totals.recoveredYTD)}
           sub="This calendar year"
         />
       </div>

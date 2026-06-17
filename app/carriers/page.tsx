@@ -183,12 +183,12 @@ export default async function CarriersPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
         <KPI
           label="Total recovered" tone="green" accentBar="var(--green)"
-          value={<Ticker value={totals.totalRecovered} format={fmtUSD} />}
+          value={fmtUSD(totals.totalRecovered)}
           sub={`across ${scorecards.length} carriers`}
         />
         <KPI
           label="Open exposure" tone="amber" accentBar="var(--amber)"
-          value={<Ticker value={totals.openExposure} format={fmtUSD} />}
+          value={fmtUSD(totals.openExposure)}
           sub={`${totals.disputeCount} active disputes`}
         />
         <KPI

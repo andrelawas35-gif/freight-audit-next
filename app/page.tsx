@@ -75,7 +75,7 @@ export default async function TodayPage() {
         maxRecords: 100,
         fields: [
           'Dispute ID', 'Status', 'Disputed amount', 'Opened date',
-          'Filed date', 'Recovery amount', 'Date resolved',
+          'Filed date', 'Recovery Amount', 'Date Resolved',
         ],
       }),
     ]);
@@ -154,13 +154,13 @@ export default async function TodayPage() {
                 label="Recovered This Month" 
                 tone="green" 
                 accentBar="var(--green)"
-                value={<Ticker value={stats.wonMTD} format={fmtUSD} />} 
+                value={fmtUSD(0)}
               />
               <KPI 
                 label="Active Exposure" 
                 tone="amber" 
                 accentBar="var(--amber)"
-                value={<Ticker value={stats.openDisputed} format={fmtUSD} />} 
+                value={fmtUSD(0)}
                 sub={`${statusCounts.open} active disputes`}
               />
               <KPI 
