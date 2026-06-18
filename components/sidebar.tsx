@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { Glyph } from '@/components/ui/primitives';
+import { CommandPalette } from './command-palette';
 
 const NAV = [
   { href: '/',          label: 'Today',    glyph: 'home',  kbd: '1' },
@@ -25,9 +26,10 @@ const NAV = [
 ];
 
 
-export function Sidebar() {
+export function Sidebar({ searchAudits, searchDisputes }: { searchAudits: any[]; searchDisputes: any[] }) {
   const pathname = usePathname();
   const [theme, setTheme] = useState('dark');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Theme toggle
   useEffect(() => {
@@ -69,6 +71,20 @@ export function Sidebar() {
         </div>
       </div>
 
+      {/* Search input */}
+      <div style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="text"
+          placeholder="Search..."
+          style={{
+            flex: 1, height: 28, borderRadius: 6, background: 'var(--surface-sunk)',
+            border: '1px solid var(--line)', display: 'flex', alignItems: 'center',
+            padding: '0 8px', gap: 8, cursor: 'pointer', color: 'var(--ink-faint)'
+          }}
+          onClick={() => setSearchOpen(true)}
+        />
+      </div>
+
       {/* Nav links */}
       <nav style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
         {NAV.map((n) => {
@@ -93,7 +109,15 @@ export function Sidebar() {
           );
         })}
       </nav>
-
+      
+        {/* THE ACTUAL SEARCH MODAL */}
+      <CommandPalette 
+        open={searchOpen} 
+        onClose={() => setSearchOpen(false)} 
+        auditResults={searchAudits} 
+        disputes={searchDisputes} 
+      />
+     
       {/* Bottom section */}
       <div style={{ marginTop: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{

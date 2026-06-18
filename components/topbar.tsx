@@ -8,7 +8,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { CommandPalette } from './command-palette';
+
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   '/':          { title: 'Today',            sub: 'Action queue · what needs doing right now' },
@@ -19,21 +19,11 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
 };
 
 export function Topbar() {
-  const [searchOpen, setSearchOpen] = useState(false);
+
   const pathname = usePathname();
   const meta = PAGE_META[pathname] || PAGE_META['/'];
 
-  // Bind global Cmd+K shortcut sequence
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+
 
   return (
     <header style={{
@@ -63,22 +53,7 @@ export function Topbar() {
         <span style={{ fontSize: 14, fontWeight: 700 }}>Console</span>
       </div>
 
-      {/* SEARCH ANCHOR INPUT STRIP */}
-      <div 
-        onClick={() => setSearchOpen(true)}
-        style={{
-          width: 240, height: 28, borderRadius: 6, background: 'var(--surface-sunk)',
-          border: '1px solid var(--line)', display: 'flex', alignItems: 'center',
-          padding: '0 8px', gap: 8, cursor: 'pointer', color: 'var(--ink-faint)'
-        }}
-      >
-        <span style={{ fontSize: 12 }}>🔍</span>
-        <span style={{ fontSize: 11.5, flex: 1, textAlign: 'left' }}>Search records...</span>
-        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 4px', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 3 }}>⌘K</span>
-      </div>
-
-      {/* Interactive global overlays */}
-      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+  
     </div>
     </header>
   );
