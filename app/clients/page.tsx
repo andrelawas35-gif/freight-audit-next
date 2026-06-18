@@ -15,29 +15,33 @@ export const dynamic = 'force-dynamic';
 
 // ── Types for computed scorecard ─────────────────────────────────
 export type ClientScorecard = {
+  totalRecovered: any;
   id: string;
   name: string;
-  active: boolean;
   gainSharePct: number;
-  lastAudit: string;
-  threshold: number;
-  disputeCount: number;
-  winCount: number;
   winRate: number;
-  recoveredMTD: number;
+  disputeCount: number;
+  active: boolean;
   recoveredYTD: number;
-  totalRecovered: number;
+  recoveredMTD: number;
+  openDisputed: number;
   gainShareEarned: number;
+  threshold: number;
+  lastAudit: string;
+  invoiceCount: number;  // ADD this
 };
-
 export default async function ClientsPage() {
   let scorecards: ClientScorecard[] = [];
+  let disputesRaw: any[] = [];
 
   try {
-    const [clientsRaw, disputesRaw] = await Promise.all([
+    const [clientsData, disputesData] = await Promise.all([
       fetchRecords('Clients', { maxRecords: 100 }),
       fetchRecords('Disputes', { maxRecords: 1000 }),
     ]);
+
+    const clientsRaw = clientsData as any[];
+    disputesRaw = disputesData as any[];
 
     // ── Timeframes for MTD / YTD calculations ──────────────────
     const now = new Date();
@@ -60,6 +64,7 @@ export default async function ClientsPage() {
 
       const won = cDisputes.filter(d => d['Status'] === 'Won');
       const resolved = cDisputes.filter(d => ['Won', 'Closed'].includes(d['Status'] || ''));
+      const openDisputed = cDisputes.length - resolved.length;
 
       let recoveredMTD = 0;
       let recoveredYTD = 0;
@@ -82,12 +87,14 @@ export default async function ClientsPage() {
         lastAudit: c['Last audit run'] || '—',
         threshold: c['Min invoice threshold'] || 0,
         disputeCount: cDisputes.length,
+        openDisputed,
         winCount: won.length,
         winRate: resolved.length > 0 ? won.length / resolved.length : 0,
         recoveredMTD,
         recoveredYTD,
         totalRecovered,
         gainShareEarned: totalRecovered * (gainSharePct / 100),
+        invoiceCount: c['Invoice count'] || 0,
       };
     });
 
@@ -111,5 +118,6 @@ export default async function ClientsPage() {
     { recoveredMTD: 0, recoveredYTD: 0, gainShare: 0 }
   );
 
-  return <ClientsView scorecards={scorecards} totals={totals} />;
+  return <ClientsView scorecards={scorecards} totals={totals} disputes={disputesRaw as any[]} />
+
 }
