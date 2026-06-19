@@ -37,6 +37,44 @@ export async function getUserByEmail(email: string): Promise<UserRow | null> {
   return rows[0] ?? null;
 }
 
+// ── admin: list / manage users ───────────────────────────────
+export type AdminUser = AppUser & {
+  client_name: string | null;
+  created_at: string;
+};
+
+export async function listUsers(limit = 200): Promise<AdminUser[]> {
+  const sql = getSql();
+  return (await sql.query(
+    `SELECT u.id, u.email, u.name, u.role, u.client_id,
+            c."Company name" AS client_name, u.created_at
+       FROM app_users u
+       LEFT JOIN "Clients" c ON c.id = u.client_id
+      ORDER BY u.created_at DESC
+      LIMIT $1`,
+    [limit]
+  )) as AdminUser[];
+}
+
+export async function setUserRole(id: string, role: 'staff' | 'client'): Promise<void> {
+  const sql = getSql();
+  await sql.query('UPDATE app_users SET role = $1 WHERE id = $2', [role, id]);
+}
+
+export async function setUserClient(id: string, clientId: string | null): Promise<void> {
+  const sql = getSql();
+  await sql.query('UPDATE app_users SET client_id = $1 WHERE id = $2', [clientId, id]);
+}
+
+export function generateTempPassword(): string {
+  // readable-ish, 12 chars
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let out = '';
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  for (const b of bytes) out += chars[b % chars.length];
+  return out;
+}
+
 export async function getUserById(id: string): Promise<AppUser | null> {
   const sql = getSql();
   const rows = (await sql.query(

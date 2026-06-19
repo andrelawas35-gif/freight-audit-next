@@ -1,35 +1,48 @@
 /*
-  app/(portal)/portal/page.tsx — client dashboard.
+  app/(portal)/portal/page.tsx — client dashboard (server data + client UI).
 
-  Scoped to the signed-in user's client (session.user.clientId). Shows the
-  money story: recovered, in dispute, recent recoveries, and open disputes —
-  all filtered to this client's linked records.
+  Fetches everything scoped to the signed-in user's client, derives KPIs,
+  recovery trend, and the carrier/error breakdown, then hands plain data to
+  the interactive <Dashboard> client component.
 */
 
 import { auth } from '@/auth';
 import { fetchRecord, fetchRecords } from '@/lib/airtable';
-import { fmtUSD, fmtDate } from '@/lib/format';
-import type { Dispute, Client } from '@/lib/types';
+import { Dashboard } from '@/components/portal/dashboard';
+import type { Dispute, Invoice, Client, AuditResult } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'green' | 'amber' }) {
-  const color = tone === 'green' ? 'var(--green-ink)' : tone === 'amber' ? 'var(--amber-ink)' : 'var(--ink)';
-  return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--line)',
-        borderRadius: 'var(--radius)',
-        padding: '14px 16px',
-      }}
-    >
-      <div style={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 24, fontWeight: 800, color, marginTop: 6 }}>{value}</div>
-    </div>
-  );
+// Friendly labels + hues for the rule/error breakdown
+const RULE_META: Record<string, { label: string; hue: number }> = {
+  DIM_WEIGHT_TRAP:     { label: 'Dim-weight overcharges', hue: 280 },
+  PHANTOM_ACCESSORIAL: { label: 'Residential surcharges', hue: 50 },
+  DUPLICATE_TRACKING:  { label: 'Duplicate billing',      hue: 152 },
+  SLA_FAILURE:         { label: 'Late deliveries',        hue: 220 },
+  LTL_SLA_FAILURE:     { label: 'LTL late deliveries',    hue: 244 },
+};
+
+function normalizeRule(raw: string): string {
+  const u = (raw || '').toUpperCase().replace(/[\s-]+/g, '_');
+  if (u.includes('DIM')) return 'DIM_WEIGHT_TRAP';
+  if (u.includes('PHANTOM') || u.includes('ACCESSORIAL') || u.includes('RESIDENTIAL')) return 'PHANTOM_ACCESSORIAL';
+  if (u.includes('DUPLICATE')) return 'DUPLICATE_TRACKING';
+  if (u.includes('LTL')) return 'LTL_SLA_FAILURE';
+  if (u.includes('SLA')) return 'SLA_FAILURE';
+  return u || 'OTHER';
+}
+
+function monthLabel(key: string) {
+  const [y, m] = key.split('-');
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  return d.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+}
+
+function shortDate(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default async function PortalDashboard() {
@@ -50,14 +63,26 @@ export default async function PortalDashboard() {
 
   let client: Client | null = null;
   let disputes: Dispute[] = [];
+  let invoices: Invoice[] = [];
+  let audits: AuditResult[] = [];
 
   try {
-    client = (await fetchRecord('Clients', clientId)) as Client;
-    disputes = (await fetchRecords('Disputes', {
-      filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
-      sort: [{ field: 'Opened date', direction: 'desc' }],
-      maxRecords: 500,
-    })) as Dispute[];
+    [client, disputes, invoices, audits] = await Promise.all([
+      fetchRecord('Clients', clientId) as Promise<Client>,
+      fetchRecords('Disputes', {
+        filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
+        sort: [{ field: 'Opened date', direction: 'desc' }],
+        maxRecords: 500,
+      }) as Promise<Dispute[]>,
+      fetchRecords('Invoices', {
+        filterByFormula: `FIND("${clientId}", ARRAYJOIN({Clients}))`,
+        maxRecords: 1000,
+      }) as Promise<Invoice[]>,
+      fetchRecords('Audit Results', {
+        filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
+        maxRecords: 1000,
+      }) as Promise<AuditResult[]>,
+    ]);
   } catch (err) {
     console.error('Portal dashboard load failed:', err);
   }
@@ -68,102 +93,70 @@ export default async function PortalDashboard() {
 
   const recovered = won.reduce((a, d) => a + (d['Recovery amount'] || 0), 0);
   const inDispute = open.reduce((a, d) => a + (d['Disputed amount'] || 0), 0);
+  const totalSpend = invoices.reduce((a, i) => a + (i['Amount billed'] || 0), 0);
+  const marginPct = totalSpend > 0 ? (recovered / totalSpend) * 100 : 0;
+
+  // Recovery trend — group Won disputes by resolved month
+  const byMonth = new Map<string, number>();
+  for (const d of won) {
+    const iso = d['Date resolved'];
+    if (!iso) continue;
+    const key = iso.slice(0, 7); // YYYY-MM
+    byMonth.set(key, (byMonth.get(key) || 0) + (d['Recovery amount'] || 0));
+  }
+  let running = 0;
+  const monthly = [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, amt]) => {
+      running += amt;
+      return { month: monthLabel(key), recovered: amt, cumulative: running };
+    });
+
+  // Breakdown — group audit results by rule, sum recoverable variance
+  const byRule = new Map<string, number>();
+  for (const a of audits) {
+    const ruleRaw = a['Detected by'] || (a['Audit Rules']?.[0] ?? '') || '';
+    const rule = normalizeRule(String(ruleRaw));
+    const amt = a['Variance'] || Math.max(0, (a['Billed amount'] || 0) - (a['Expected amount'] || 0));
+    if (amt > 0) byRule.set(rule, (byRule.get(rule) || 0) + amt);
+  }
+  const breakdown = [...byRule.entries()]
+    .map(([rule, amount]) => ({
+      label: RULE_META[rule]?.label || rule,
+      amount: Math.round(amount),
+      hue: RULE_META[rule]?.hue || 70,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const recentRecovered = won
+    .slice()
+    .sort((a, b) => (b['Date resolved'] || '').localeCompare(a['Date resolved'] || ''))
+    .slice(0, 8)
+    .map((d) => ({
+      id: d['Dispute ID'] || d.id.slice(0, 10),
+      date: shortDate(d['Date resolved']),
+      amount: d['Recovery amount'] || 0,
+    }));
+
+  const openDisputes = open.slice(0, 10).map((d) => ({
+    id: d['Dispute ID'] || d.id.slice(0, 10),
+    status: d['Status'] || 'Open',
+    amount: d['Disputed amount'] || 0,
+  }));
 
   return (
-    <div>
-      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 2 }}>
-        {client?.['Company name'] || 'Your dashboard'}
-      </h1>
-      <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>
-        Freight overcharge recovery, working on your behalf.
-      </p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
-        <Stat label="Recovered" value={fmtUSD(recovered)} tone="green" />
-        <Stat label="In dispute" value={fmtUSD(inDispute)} tone="amber" />
-        <Stat label="Active disputes" value={String(open.length)} />
-        <Stat label="Total disputes" value={String(disputes.length)} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {/* Recently recovered */}
-        <section
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line)',
-            borderRadius: 'var(--radius)',
-            padding: 16,
-          }}
-        >
-          <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Recently recovered</h2>
-          {won.length === 0 && (
-            <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>No recoveries yet.</p>
-          )}
-          {won.slice(0, 6).map((d) => (
-            <Row
-              key={d.id}
-              left={d['Dispute ID'] || d.id.slice(0, 10)}
-              sub={fmtDate(d['Date resolved'])}
-              right={fmtUSD(d['Recovery amount'] || 0)}
-              rightColor="var(--green-ink)"
-            />
-          ))}
-        </section>
-
-        {/* Working on your behalf */}
-        <section
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line)',
-            borderRadius: 'var(--radius)',
-            padding: 16,
-          }}
-        >
-          <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Working on your behalf</h2>
-          {open.length === 0 && (
-            <p style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>No open disputes.</p>
-          )}
-          {open.slice(0, 6).map((d) => (
-            <Row
-              key={d.id}
-              left={d['Dispute ID'] || d.id.slice(0, 10)}
-              sub={d['Status'] || 'Open'}
-              right={fmtUSD(d['Disputed amount'] || 0)}
-              rightColor="var(--amber-ink)"
-            />
-          ))}
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function Row({
-  left,
-  sub,
-  right,
-  rightColor,
-}: {
-  left: string;
-  sub: string;
-  right: string;
-  rightColor: string;
-}) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 0',
-        borderTop: '1px solid var(--line-2)',
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <div className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{left}</div>
-        <div style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{sub}</div>
-      </div>
-      <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: rightColor }}>{right}</span>
-    </div>
+    <Dashboard
+      companyName={client?.['Company name'] || 'Your dashboard'}
+      recovered={recovered}
+      inDispute={inDispute}
+      activeCount={open.length}
+      totalCount={disputes.length}
+      totalSpend={totalSpend}
+      marginPct={marginPct}
+      monthly={monthly}
+      breakdown={breakdown}
+      recentRecovered={recentRecovered}
+      openDisputes={openDisputes}
+    />
   );
 }

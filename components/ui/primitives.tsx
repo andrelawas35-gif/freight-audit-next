@@ -346,6 +346,7 @@ export function Glyph({ name, size = 14 }: { name: string; size?: number }) {
     arrowDown:     'M12 5v14M19 12l-7 7-7-7',
     alertTriangle: 'M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
     info:          'M12 12m-10 0a10 10 0 1 0 20 0 10 10 0 1 0-20 0M12 16v-4M12 8h.01',
+    shield:        'M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z',
   };
   const d = paths[name];
   if (!d) return null;

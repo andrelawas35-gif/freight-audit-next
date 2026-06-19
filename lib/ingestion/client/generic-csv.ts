@@ -86,7 +86,7 @@ export function parseClientShipmentCsv(
   clientId: string
 ): GenericCsvResult {
   const lines = csv.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return { shipments: [], rowCount: 0, skipped: 0 };
+  if (lines.length < 2) return { shipments: [], rowCount: 0, skipped: 0, dataHealth: 0 };
 
   const headers = splitCsvLine(lines[0]);
   const idx = buildHeaderIndex(headers);

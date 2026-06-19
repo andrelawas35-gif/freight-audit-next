@@ -25,6 +25,7 @@ const NAV = [
   { href: '/clients',    label: 'Clients',   glyph: 'users',     kbd: '5' },
   { href: '/engine',     label: 'Engine',    glyph: 'grid',      kbd: '6' },
   { href: '/ingestion',  label: 'Ingestion', glyph: 'arrowDown', kbd: '7' },
+  { href: '/users',      label: 'Users',     glyph: 'shield',    kbd: '8' },
 ];
 
 

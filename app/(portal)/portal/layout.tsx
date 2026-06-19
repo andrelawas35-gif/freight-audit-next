@@ -21,13 +21,14 @@ export default async function PortalLayout({
     <div style={{ minHeight: '100vh', background: 'var(--surface-sunk)' }}>
       <header
         style={{
-          height: 52,
+          minHeight: 52,
           borderBottom: '1px solid var(--line)',
           background: 'var(--surface)',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 20px',
-          gap: 22,
+          padding: '8px 16px',
+          gap: 14,
+          flexWrap: 'wrap',
           position: 'sticky',
           top: 0,
           zIndex: 10,
