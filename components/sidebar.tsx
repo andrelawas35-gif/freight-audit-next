@@ -18,11 +18,13 @@ import { Glyph } from '@/components/ui/primitives';
 import { CommandPalette } from './command-palette';
 
 const NAV = [
-  { href: '/',          label: 'Today',    glyph: 'home',  kbd: '1' },
-  { href: '/queue',     label: 'Queue',    glyph: 'flag',  kbd: '2' },
-  { href: '/disputes',  label: 'Disputes', glyph: 'gavel', kbd: '3' },
-  { href: '/carriers',  label: 'Carriers', glyph: 'truck', kbd: '4' },
-  { href: '/clients',   label: 'Clients',  glyph: 'users', kbd: '5' },
+  { href: '/',           label: 'Today',     glyph: 'home',      kbd: '1' },
+  { href: '/queue',      label: 'Queue',     glyph: 'flag',      kbd: '2' },
+  { href: '/disputes',   label: 'Disputes',  glyph: 'gavel',     kbd: '3' },
+  { href: '/carriers',   label: 'Carriers',  glyph: 'truck',     kbd: '4' },
+  { href: '/clients',    label: 'Clients',   glyph: 'users',     kbd: '5' },
+  { href: '/engine',     label: 'Engine',    glyph: 'grid',      kbd: '6' },
+  { href: '/ingestion',  label: 'Ingestion', glyph: 'arrowDown', kbd: '7' },
 ];
 
 
@@ -66,7 +68,7 @@ export function Sidebar({ searchAudits, searchDisputes }: { searchAudits: any[];
           </svg>
         </div>
         <div style={{ lineHeight: 1.1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Reclaim</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Aurelian Collective</div>
           <div className="mono" style={{ fontSize: 8.5, color: 'var(--ink-faint)', letterSpacing: '0.08em' }}>FREIGHT AUDIT</div>
         </div>
       </div>

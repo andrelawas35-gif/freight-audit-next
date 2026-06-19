@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card, KPI, Ticker, SectionLabel, Btn, RuleTag, StagePill } from '@/components/ui/primitives';
 import { fmtDate, fmtPct, fmtUSD } from '@/lib/format';
-import type { ClientScorecard } from '@/app/clients/page';
+import type { ClientScorecard } from '@/app/(console)/clients/page';
 
 export function ClientsView({ 
   scorecards, 

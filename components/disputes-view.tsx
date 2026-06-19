@@ -23,7 +23,7 @@ import {
   Btn, Glyph, Segmented, FilterChip, FilterPopover, AuditTrail,
   type TrailEvent,
 } from '@/components/ui/primitives';
-import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/disputes/actions';
+import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/(console)/disputes/actions';
 
 export type DisputeRow = {
   id: string;

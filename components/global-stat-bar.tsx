@@ -23,7 +23,7 @@ export default async function GlobalStatBar() {
   disputes.forEach(d => {
     const status = d['Status'] || 'Open';
     const disputed = d['Disputed amount'] || 0;
-    const recovered = d['Recovery Amount'] || 0;
+    const recovered = d['Recovery amount'] || 0;
 
     if (status === 'Won') {
       totalRecovered += recovered;

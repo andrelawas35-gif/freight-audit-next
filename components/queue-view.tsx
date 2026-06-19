@@ -30,7 +30,7 @@ import { templateFor } from '@/lib/templates';
 import {
   setReviewStatus, dismissFinding, fileDispute,
   fileDisputesBulk, dismissBulk, approveBulk,
-} from '@/app/queue/actions';
+} from '@/app/(console)/queue/actions';
 
 export type QueueRow = {
   id: string;
