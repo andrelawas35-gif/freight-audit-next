@@ -1,44 +1,47 @@
 /*
-  PHANTOM_ACCESSORIAL — residential delivery surcharge on a commercial address.
+  PHANTOM_ACCESSORIAL — residential delivery surcharge that shouldn't apply.
 
-  Carriers charge ~$5-$6 for residential delivery. If the shipment destination
-  is classified as Commercial but was charged a residential surcharge, flag it.
+  Two ways this is a valid dispute:
+    1. The destination is a Commercial address (residential surcharge mis-applied).
+    2. The client's contract waives the residential surcharge entirely
+       (rulebook: residential_waived = true) — any residential charge is recoverable.
 
-  Since we don't store line-item charges separately here, we check address
-  classification and flag the invoice if the address is Commercial. The billed
-  vs expected delta is approximated as the standard residential surcharge rate.
+  The expected surcharge rate comes from the layered rulebook:
+  client contract → carrier published rate → global default.
 */
 
 import type { RuleFn, Finding } from '../types';
+import { scopeOf } from '../types';
 
-// Standard residential surcharge rates by carrier SCAC (2024 approximations)
-const RESIDENTIAL_SURCHARGE: Record<string, number> = {
-  UPSN: 6.40,
-  FDXG: 6.30,
-  FDXE: 6.30,
-  default: 5.50,
-};
+const DEFAULT_RESIDENTIAL = 5.50;
 
-export const phantomAccessorialRule: RuleFn = (invoice, shipment) => {
+export const phantomAccessorialRule: RuleFn = (invoice, shipment, ctx) => {
   if (!shipment) return null;
-  if (shipment['Address classification'] !== 'Commercial') return null;
 
   const billed = invoice['Amount billed'];
   if (!billed) return null;
 
-  const scac = (shipment['Carrier'] || invoice['Carrier'] || '').toUpperCase();
-  const surcharge = RESIDENTIAL_SURCHARGE[scac] ?? RESIDENTIAL_SURCHARGE.default;
+  const scope = scopeOf(invoice, shipment);
+  const isCommercial = shipment['Address classification'] === 'Commercial';
+  const waived = ctx.resolver.bool('residential_waived', scope, false);
 
+  // Only a dispute if the address is commercial OR the contract waives residential.
+  if (!isCommercial && !waived) return null;
+
+  const surcharge = ctx.resolver.num('residential_surcharge', scope, DEFAULT_RESIDENTIAL);
   const expectedAmount = parseFloat((billed - surcharge).toFixed(2));
-  const variance = surcharge;
+
+  const reason = waived
+    ? 'contract waives residential surcharge'
+    : `commercial address (${shipment['Destination zip'] ?? 'unknown zip'})`;
 
   return {
     ruleCode: 'PHANTOM_ACCESSORIAL',
     outcome: 'FLAGGED',
     billedAmount: billed,
     expectedAmount,
-    variance,
-    notes: `Residential surcharge (~$${surcharge.toFixed(2)}) applied to commercial address (${shipment['Destination zip'] ?? 'unknown zip'}).`,
+    variance: surcharge,
+    notes: `Residential surcharge (~$${surcharge.toFixed(2)}) — ${reason}.`,
     invoiceId: invoice.id,
     shipmentId: shipment.id,
   };

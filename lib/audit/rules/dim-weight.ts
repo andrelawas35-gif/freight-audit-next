@@ -9,10 +9,11 @@
 */
 
 import type { RuleFn, Finding } from '../types';
+import { scopeOf } from '../types';
 
-const DEFAULT_DIM_FACTOR = 139; // cubic inches per pound
+const DEFAULT_DIM_FACTOR = 139; // cubic inches per pound (global fallback)
 
-export const dimWeightRule: RuleFn = (invoice, shipment) => {
+export const dimWeightRule: RuleFn = (invoice, shipment, ctx) => {
   if (!shipment) return null;
 
   const { 'Actual L': l, 'Actual W': w, 'Actual H': h, 'Actual weight lbs': actualWeight } = shipment;
@@ -20,7 +21,11 @@ export const dimWeightRule: RuleFn = (invoice, shipment) => {
 
   if (!l || !w || !h || !actualWeight || !billed) return null;
 
-  const dimWeight = Math.ceil((l * w * h) / DEFAULT_DIM_FACTOR);
+  // Dim divisor comes from the client's contract if negotiated, else the
+  // carrier's published value, else the global default.
+  const dimFactor = ctx.resolver.num('dim_divisor', scopeOf(invoice, shipment), DEFAULT_DIM_FACTOR);
+
+  const dimWeight = Math.ceil((l * w * h) / dimFactor);
   const billableWeight = Math.max(dimWeight, actualWeight);
 
   // Only flag if carrier used dim weight (billable > actual)

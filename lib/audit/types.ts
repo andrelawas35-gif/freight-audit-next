@@ -6,6 +6,7 @@
 */
 
 import type { Invoice, Shipment } from '@/lib/types';
+import type { Resolver } from './rulebook';
 
 export type RuleCode =
   | 'DIM_WEIGHT_TRAP'
@@ -25,8 +26,25 @@ export type Finding = {
   shipmentId?: string;
 };
 
+// Context passed to every rule. `resolver` is the layered rulebook
+// (contract → carrier → global); `allInvoices` is used by duplicate detection.
+export type RuleContext = {
+  allInvoices: Invoice[];
+  resolver: Resolver;
+};
+
 export type RuleFn = (
   invoice: Invoice,
   shipment: Shipment | null,
-  allInvoices?: Invoice[]   // needed for duplicate detection
+  ctx: RuleContext
 ) => Finding | null;
+
+// Helper: derive the rulebook lookup scope from an invoice + shipment.
+export function scopeOf(invoice: Invoice, shipment: Shipment | null) {
+  return {
+    clientId: invoice['Clients']?.[0] ?? null,
+    scac: (shipment?.['Carrier'] || invoice['Carrier']?.[0] || '').toUpperCase() || null,
+    serviceLevel: shipment?.['Service level'] ?? null,
+    shipDate: shipment?.['Ship date'] ?? invoice['Invoice date'] ?? null,
+  };
+}

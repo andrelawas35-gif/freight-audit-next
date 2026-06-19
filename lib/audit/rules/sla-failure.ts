@@ -13,6 +13,7 @@
 */
 
 import type { RuleFn, Finding } from '../types';
+import { scopeOf } from '../types';
 
 const SLA_DAYS: Record<string, number> = {
   'Next Day Air': 1,
@@ -41,7 +42,7 @@ function isLTL(serviceLevel: string) {
   return serviceLevel.toUpperCase().includes('LTL');
 }
 
-export const slaFailureRule: RuleFn = (invoice, shipment) => {
+export const slaFailureRule: RuleFn = (invoice, shipment, ctx) => {
   if (!shipment) return null;
 
   const svc = shipment['Service level'];
@@ -51,7 +52,15 @@ export const slaFailureRule: RuleFn = (invoice, shipment) => {
 
   if (!svc || !shipDate || !deliveryDate || !billed) return null;
 
-  const promised = SLA_DAYS[svc];
+  const scope = scopeOf(invoice, shipment);
+
+  // If the client traded away the money-back guarantee in their contract,
+  // a late delivery is not a recoverable dispute.
+  if (!ctx.resolver.bool('guarantee_enabled', scope, true)) return null;
+
+  // Promised transit days: contract → carrier → global (per service level),
+  // falling back to the built-in map for unknown services.
+  const promised = ctx.resolver.num('sla_transit_days', scope, SLA_DAYS[svc] ?? 0);
   if (!promised) return null; // unknown service level, skip
 
   const shipped = new Date(shipDate);

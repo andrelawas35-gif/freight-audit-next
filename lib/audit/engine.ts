@@ -9,6 +9,7 @@
 import { fetchRecords, createRecord, updateRecord, batchCreate } from '@/lib/airtable';
 import type { Invoice, Shipment } from '@/lib/types';
 import type { Finding } from './types';
+import { loadRulebook, createResolver } from './rulebook';
 
 import { dimWeightRule } from './rules/dim-weight';
 import { phantomAccessorialRule } from './rules/phantom-accessorial';
@@ -67,7 +68,12 @@ export async function runAudit(options: {
     existingResults.flatMap((r: any) => r['Invoice'] ?? [])
   );
 
-  // 4. Run rules
+  // 4. Load the layered rulebook once and build the resolver
+  const rulebookRows = await loadRulebook();
+  const resolver = createResolver(rulebookRows);
+  const ctx = { allInvoices: invoices, resolver };
+
+  // 5. Run rules
   const findings: Finding[] = [];
   const errors: string[] = [];
 
@@ -79,7 +85,7 @@ export async function runAudit(options: {
 
     for (const rule of ALL_RULES) {
       try {
-        const finding = rule(invoice, shipment, invoices);
+        const finding = rule(invoice, shipment, ctx);
         if (finding) findings.push(finding);
       } catch (err) {
         errors.push(`Rule ${rule.name} failed on invoice ${invoice['Invoice number'] ?? invoice.id}: ${err}`);
@@ -87,7 +93,7 @@ export async function runAudit(options: {
     }
   }
 
-  // 5. Write findings to Airtable
+  // 6. Write findings to Airtable
   if (!dryRun && findings.length > 0) {
     const records = findings.map((f) => ({
       'Invoice': [f.invoiceId],
@@ -103,7 +109,7 @@ export async function runAudit(options: {
     await batchCreate('Audit Results', records);
   }
 
-  // 6. Update each client's Last audit run timestamp
+  // 7. Update each client's Last audit run timestamp
   if (!dryRun && clientId) {
     await updateRecord('Clients', clientId, {
       'Last audit run': new Date().toISOString(),

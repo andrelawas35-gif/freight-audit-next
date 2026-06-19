@@ -7,7 +7,8 @@
 
 import type { RuleFn, Finding } from '../types';
 
-export const duplicateTrackingRule: RuleFn = (invoice, shipment, allInvoices) => {
+export const duplicateTrackingRule: RuleFn = (invoice, shipment, ctx) => {
+  const allInvoices = ctx?.allInvoices;
   if (!shipment || !allInvoices) return null;
 
   const pro = shipment['PRO number'] || shipment['Tracking number'];
