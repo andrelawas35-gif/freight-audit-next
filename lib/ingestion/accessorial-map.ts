@@ -92,10 +92,26 @@ export function standardizeAccessorial(
   scac: string,
   carrierCode: string
 ): StandardAccessorial {
-  const upper = carrierCode.toUpperCase();
-  return (
-    ACCESSORIAL_MAP[scac]?.[upper] ??
-    ACCESSORIAL_MAP['_LTL']?.[upper] ??
-    'OTHER'
-  );
+  return baselineAccessorial(scac, carrierCode).code;
 }
+
+// Baseline (hardcoded) lookup — the "global default" dictionary. Reports whether
+// it actually matched so the resolver can decide to learn / queue an exception.
+export function baselineAccessorial(
+  scac: string,
+  carrierCode: string
+): { code: StandardAccessorial; matched: boolean } {
+  const upper = carrierCode.toUpperCase();
+  const hit = ACCESSORIAL_MAP[scac]?.[upper] ?? ACCESSORIAL_MAP['_LTL']?.[upper];
+  return hit ? { code: hit, matched: true } : { code: 'OTHER', matched: false };
+}
+
+// All standard codes — used to populate the analyst resolve form.
+export const STANDARD_ACCESSORIALS: StandardAccessorial[] = [
+  'RESIDENTIAL_DELIVERY', 'FUEL_SURCHARGE', 'DELIVERY_AREA_SURCHARGE',
+  'EXTENDED_DELIVERY_AREA', 'SIGNATURE_REQUIRED', 'ADULT_SIGNATURE',
+  'ADDRESS_CORRECTION', 'SATURDAY_DELIVERY', 'INSIDE_DELIVERY',
+  'LIFTGATE_DELIVERY', 'LIFTGATE_PICKUP', 'LIMITED_ACCESS',
+  'NOTIFY_BEFORE_DELIVERY', 'REDELIVERY', 'RETURN_TO_SENDER',
+  'OVERSIZE', 'OVERWEIGHT', 'HAZMAT', 'DIM_WEIGHT', 'OTHER',
+];

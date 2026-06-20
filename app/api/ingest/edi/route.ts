@@ -14,6 +14,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseEdi210 } from '@/lib/ingestion/edi/parser';
 import { normalizeEdi210 } from '@/lib/ingestion/carriers/from-edi';
 import { stageInvoice } from '@/lib/ingestion/normalize';
+import { loadLearnedMappings, createMappingContext, persistExceptions } from '@/lib/ingestion/mappings';
+import { annotateOpenExceptions } from '@/lib/ingestion/data-clerk';
 
 export async function POST(req: NextRequest) {
   // Auth
@@ -30,11 +32,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing raw EDI body' }, { status: 400 });
     }
 
+    const ctx        = createMappingContext(await loadLearnedMappings(), 'edi');
     const parsed     = parseEdi210(rawEdi);
-    const normalized = normalizeEdi210(parsed);
+    const normalized = normalizeEdi210(parsed, ctx);
     const invoiceId  = await stageInvoice(normalized);
+    const newExceptions = await persistExceptions(ctx.exceptions);
+    if (newExceptions > 0) await annotateOpenExceptions();
 
-    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber });
+    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[ingest/edi]', message);

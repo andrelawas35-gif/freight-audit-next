@@ -12,8 +12,7 @@
 */
 
 import type { NormalizedInvoice, AccessorialFee } from '../schema';
-import { standardizeAccessorial } from '../accessorial-map';
-import { standardizeServiceLevel } from '../service-level-map';
+import { type MappingContext, baselineMappingContext } from '../mappings';
 
 export type LtlCsvColumnMap = {
   invoiceNumber:  string;
@@ -59,7 +58,8 @@ function parseRows(csv: string): Record<string, string>[] {
 
 export function parseLtlCsv(
   csv: string,
-  options: { scac: string; columns?: Partial<LtlCsvColumnMap> }
+  options: { scac: string; columns?: Partial<LtlCsvColumnMap> },
+  ctx: MappingContext = baselineMappingContext()
 ): NormalizedInvoice[] {
   const cols: LtlCsvColumnMap = { ...DEFAULT_COLUMNS, ...options.columns };
   const scac = options.scac.toUpperCase();
@@ -99,7 +99,7 @@ export function parseLtlCsv(
         baseFuel += amount;
       } else {
         accessorialFees.push({
-          code:        standardizeAccessorial(scac, code),
+          code:        ctx.accessorial(scac, code),
           description: desc || code,
           amount,
         });
@@ -120,7 +120,7 @@ export function parseLtlCsv(
       totalBilled,
       billedWeight,
       billedWeightType: 'actual',
-      serviceLevel:     standardizeServiceLevel(scac, svcCode),
+      serviceLevel:     ctx.serviceLevel(scac, svcCode),
       originZip:        (first[cols.originZip] ?? '').substring(0, 5),
       destinationZip:   (first[cols.destinationZip] ?? '').substring(0, 5),
       addressType:      'unknown',

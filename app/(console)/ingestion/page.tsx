@@ -6,8 +6,10 @@
   coverage — plus the unmatched invoices that need attention.
 */
 
+import Link from 'next/link';
 import { fetchRecords } from '@/lib/airtable';
 import { fmtUSD } from '@/lib/format';
+import { listExceptions } from '@/lib/ingestion/mappings';
 import type { Invoice, Shipment } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -51,17 +53,21 @@ export default async function IngestionPage() {
   let shipments: Shipment[] = [];
   let auditedInvoiceIds = new Set<string>();
 
+  let openExceptions = 0;
+
   try {
-    const [inv, ship, audits] = await Promise.all([
+    const [inv, ship, audits, excs] = await Promise.all([
       fetchRecords('Invoices', { maxRecords: 1000 }),
       fetchRecords('Shipments', { maxRecords: 1000 }),
       fetchRecords('Audit Results', { maxRecords: 1000, fields: ['Invoice'] }),
+      listExceptions('open', 500),
     ]);
     invoices = inv as Invoice[];
     shipments = ship as Shipment[];
     auditedInvoiceIds = new Set(
       (audits as { Invoice?: string[] }[]).flatMap((a) => a['Invoice'] ?? [])
     );
+    openExceptions = excs.length;
   } catch (err) {
     console.error('Ingestion page load failed:', err);
   }
@@ -77,11 +83,24 @@ export default async function IngestionPage() {
 
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1200, margin: '0 auto' }}>
-      <div>
-        <h1 style={{ fontSize: 18, fontWeight: 800 }}>Ingestion &amp; matching</h1>
-        <p style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>
-          Invoices need a matched shipment to be auditable. Track coverage and fix the gaps.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 18, fontWeight: 800 }}>Ingestion &amp; matching</h1>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>
+            Invoices need a matched shipment to be auditable. Track coverage and fix the gaps.
+          </p>
+        </div>
+        <Link href="/ingestion/exceptions" style={{
+          display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none',
+          background: openExceptions > 0 ? 'var(--amber-soft)' : 'var(--surface)',
+          border: `1px solid ${openExceptions > 0 ? 'var(--amber-line)' : 'var(--line)'}`,
+          borderRadius: 'var(--radius)', padding: '8px 13px',
+        }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: openExceptions > 0 ? 'var(--amber-ink)' : 'var(--ink-2)' }}>
+            {openExceptions}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>unmapped code{openExceptions === 1 ? '' : 's'} →</span>
+        </Link>
       </div>
 
       {/* KPI tiles */}

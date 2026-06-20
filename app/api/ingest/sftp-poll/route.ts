@@ -18,6 +18,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseLtlCsv }       from '@/lib/ingestion/carriers/ltl-csv';
 import { stageInvoice }      from '@/lib/ingestion/normalize';
 import type { LtlCsvColumnMap } from '@/lib/ingestion/carriers/ltl-csv';
+import { loadLearnedMappings, createMappingContext, persistExceptions } from '@/lib/ingestion/mappings';
+import { annotateOpenExceptions } from '@/lib/ingestion/data-clerk';
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-ingest-secret');
@@ -37,7 +39,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'scac and csv are required' }, { status: 400 });
     }
 
-    const invoices = parseLtlCsv(csv, { scac, columns });
+    const ctx = createMappingContext(await loadLearnedMappings(), 'csv');
+    const invoices = parseLtlCsv(csv, { scac, columns }, ctx);
 
     const results = await Promise.allSettled(
       invoices.map((inv) => stageInvoice(inv))
@@ -49,7 +52,10 @@ export async function POST(req: NextRequest) {
       .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
       .map((r) => String(r.reason));
 
-    return NextResponse.json({ ok: true, invoices: invoices.length, succeeded, failed, errors });
+    const newExceptions = await persistExceptions(ctx.exceptions);
+    if (newExceptions > 0) await annotateOpenExceptions();
+
+    return NextResponse.json({ ok: true, invoices: invoices.length, succeeded, failed, errors, newExceptions });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[ingest/sftp-poll]', message);

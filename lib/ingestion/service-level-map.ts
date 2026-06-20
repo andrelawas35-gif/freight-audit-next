@@ -40,11 +40,19 @@ const SERVICE_MAP: Record<string, Record<string, string>> = {
 };
 
 export function standardizeServiceLevel(scac: string, carrierCode: string): string {
+  return baselineServiceLevel(scac, carrierCode).value;
+}
+
+// Baseline (hardcoded) lookup. Reports whether it matched so the resolver can
+// queue an exception for unknown service codes.
+export function baselineServiceLevel(
+  scac: string,
+  carrierCode: string
+): { value: string; matched: boolean } {
   const upper = carrierCode.toUpperCase();
-  return (
+  const hit =
     SERVICE_MAP[scac]?.[upper] ??
-    SERVICE_MAP[scac]?.[carrierCode] ??   // some codes are mixed case
-    SERVICE_MAP['_LTL']?.[upper] ??
-    carrierCode                            // fall back to raw code if unknown
-  );
+    SERVICE_MAP[scac]?.[carrierCode] ??
+    SERVICE_MAP['_LTL']?.[upper];
+  return hit ? { value: hit, matched: true } : { value: carrierCode, matched: false };
 }

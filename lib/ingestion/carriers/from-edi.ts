@@ -8,13 +8,15 @@
 import type { NormalizedInvoice } from '../schema';
 import type { EdiRawInvoice } from '../edi/parser';
 import { ediDateToIso } from '../edi/parser';
-import { standardizeAccessorial } from '../accessorial-map';
-import { standardizeServiceLevel } from '../service-level-map';
+import { type MappingContext, baselineMappingContext } from '../mappings';
 
 // L1 codes that represent the base freight charge (not accessorials)
 const BASE_CHARGE_CODES = new Set(['FR', 'LH', 'BASE', 'FREIGHT', '0', '400', '401']);
 
-export function normalizeEdi210(raw: EdiRawInvoice): NormalizedInvoice {
+export function normalizeEdi210(
+  raw: EdiRawInvoice,
+  ctx: MappingContext = baselineMappingContext()
+): NormalizedInvoice {
   const scac = raw.scac.toUpperCase();
 
   // Split line items into base charge vs accessorials
@@ -24,7 +26,7 @@ export function normalizeEdi210(raw: EdiRawInvoice): NormalizedInvoice {
   const baseFuel = baseItems.reduce((sum, li) => sum + li.amount, 0);
 
   const accessorialFees = accessItems.map((li) => ({
-    code:        standardizeAccessorial(scac, li.code),
+    code:        ctx.accessorial(scac, li.code),
     description: li.description || li.code,
     amount:      li.amount,
   }));
@@ -48,7 +50,7 @@ export function normalizeEdi210(raw: EdiRawInvoice): NormalizedInvoice {
     totalBilled:      raw.totalCharges,
     billedWeight,
     billedWeightType: hasDim ? 'dimensional' : 'actual',
-    serviceLevel:     standardizeServiceLevel(scac, ''),  // EDI 210 doesn't always include service code
+    serviceLevel:     ctx.serviceLevel(scac, ''),  // EDI 210 doesn't always include service code
     originZip:        raw.originZip,
     destinationZip:   raw.destinationZip,
     addressType:      'unknown',

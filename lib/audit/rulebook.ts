@@ -53,7 +53,67 @@ export type Resolver = {
 
 export async function loadRulebook(): Promise<RulebookRow[]> {
   const sql = getSql();
-  return (await sql.query('SELECT * FROM rulebook')) as RulebookRow[];
+  return (await sql.query(
+    `SELECT * FROM rulebook
+      ORDER BY rule_key,
+        CASE scope WHEN 'global' THEN 0 WHEN 'carrier' THEN 1 ELSE 2 END,
+        carrier_scac NULLS FIRST, service_level NULLS FIRST`
+  )) as RulebookRow[];
+}
+
+export type NewRulebookRow = {
+  scope: 'global' | 'carrier' | 'contract';
+  clientId?: string | null;
+  carrierScac?: string | null;
+  serviceLevel?: string | null;
+  ruleKey: string;
+  numValue?: number | null;
+  boolValue?: boolean | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  note?: string | null;
+};
+
+export async function createRulebookRow(r: NewRulebookRow): Promise<RulebookRow> {
+  const sql = getSql();
+  const rows = (await sql.query(
+    `INSERT INTO rulebook
+       (scope, client_id, carrier_scac, service_level, rule_key,
+        num_value, bool_value, effective_from, effective_to, note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     RETURNING *`,
+    [
+      r.scope,
+      r.clientId ?? null,
+      r.carrierScac ?? null,
+      r.serviceLevel ?? null,
+      r.ruleKey,
+      r.numValue ?? null,
+      r.boolValue ?? null,
+      r.effectiveFrom || null,
+      r.effectiveTo || null,
+      r.note ?? null,
+    ]
+  )) as RulebookRow[];
+  return rows[0];
+}
+
+export async function updateRulebookRow(
+  id: string,
+  patch: { numValue?: number | null; boolValue?: boolean | null; effectiveFrom?: string | null; effectiveTo?: string | null }
+): Promise<void> {
+  const sql = getSql();
+  await sql.query(
+    `UPDATE rulebook
+        SET num_value = $2, bool_value = $3, effective_from = $4, effective_to = $5
+      WHERE id = $1`,
+    [id, patch.numValue ?? null, patch.boolValue ?? null, patch.effectiveFrom || null, patch.effectiveTo || null]
+  );
+}
+
+export async function deleteRulebookRow(id: string): Promise<void> {
+  const sql = getSql();
+  await sql.query('DELETE FROM rulebook WHERE id = $1', [id]);
 }
 
 export function createResolver(rows: RulebookRow[]): Resolver {
