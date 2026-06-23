@@ -124,7 +124,7 @@ export async function listClientOptions(): Promise<ClientOption[]> {
     ORDER BY "Company name" NULLS LAST, id
     LIMIT 500
   `);
-  return rows.map((row: any) => ({ id: row.id, name: row.name || row.id }));
+  return (rows as { id: string; name: string | null }[]).map((row) => ({ id: row.id, name: row.name || row.id }));
 }
 
 export async function listPolicies(): Promise<ClientPolicyRow[]> {
@@ -164,7 +164,7 @@ export async function getPolicyDetail(policyId: string) {
     sql.query(
       `SELECT * FROM policy_documents WHERE policy_id = $1 ORDER BY created_at DESC`,
       [policyId]
-    ) as Promise<PolicyDocumentRow[]>,
+    ) as unknown as Promise<PolicyDocumentRow[]>,
     sql.query(
       `SELECT rs.*, count(r.id)::int AS rule_count
        FROM policy_rulesets rs
@@ -173,11 +173,11 @@ export async function getPolicyDetail(policyId: string) {
        GROUP BY rs.id
        ORDER BY rs.created_at DESC`,
       [policy.client_id]
-    ) as Promise<PolicyRulesetRow[]>,
+    ) as unknown as Promise<PolicyRulesetRow[]>,
     sql.query(
       `SELECT * FROM policy_rules WHERE policy_id = $1 ORDER BY created_at DESC`,
       [policyId]
-    ) as Promise<PolicyRuleRow[]>,
+    ) as unknown as Promise<PolicyRuleRow[]>,
     sql.query(
       `SELECT br.*
        FROM policy_backtest_runs br
@@ -186,7 +186,7 @@ export async function getPolicyDetail(policyId: string) {
        ORDER BY br.created_at DESC
        LIMIT 20`,
       [policy.client_id]
-    ) as Promise<PolicyBacktestRunRow[]>,
+    ) as unknown as Promise<PolicyBacktestRunRow[]>,
   ]);
 
   return { policy, documents, rulesets, rules, runs };
