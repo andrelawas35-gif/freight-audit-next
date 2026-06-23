@@ -76,6 +76,10 @@ Do not expose raw gateway taxonomy editing to client users until the taxonomy ha
 
 ## Policy Intelligence MVP UI
 
+> UI specifics only. The concern's model, workflow, taxonomy, and schema live in
+> [`policy-intelligence/`](policy-intelligence/README.md); client-facing report framing is
+> in [`policy-intelligence/05-readiness.md`](policy-intelligence/05-readiness.md).
+
 Policy Intelligence should start as staff-only console tooling. It is a consulting workbench first, then a gateway configuration surface.
 
 Recommended staff routes:

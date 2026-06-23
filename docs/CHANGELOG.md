@@ -4,6 +4,26 @@ Completed or historical changes belong here. Keep `docs/LAUNCH-BLOCKERS.md` and 
 
 ## 2026-06-23
 
+### Policy Intelligence Doc Restructure (context engineering)
+
+- Split the Policy Intelligence concern out of the layer docs into a single cohesive,
+  lazily-loadable module: `docs/policy-intelligence/` (`README`, `00-glossary`,
+  `01-ingestion`, `02-extraction`, `03-taxonomy`, `04-backtest`, `05-readiness`,
+  `06-schema`).
+- Removed duplicated enums: gateway categories, insurance risk categories, gateway
+  actions, and high-value verticals were listed verbatim across `gateway-readiness.md`,
+  `audit-engine.md`, `data-layer.md`, and `ingestion.md`. They are now single-sourced in
+  `policy-intelligence/03-taxonomy.md`, which points at `lib/intelligence/taxonomy.ts` as
+  the executable authority.
+- Moved all 11 policy/gateway/insurance table schemas out of `data-layer.md` (320 → ~104
+  lines) into `policy-intelligence/06-schema.md`; layer docs now hold one-line pointers.
+- Converted `docs/gateway-readiness.md` into a redirect stub and repointed CLAUDE.md's
+  domain-doc routing table to the module.
+- Captured design decisions surfaced during the grilling session: keep document blobs
+  (`storage_key`/`checksum`), the Ruleset as the effective-dating authority (with the
+  current `runPolicyBacktest` non-honoring noted as a known gap), denied-claims as a
+  first-class historical source, and the structural AI suggest-only trust boundary.
+
 ### Ingestion Control Panel
 
 - Rebuilt `/ingestion` from a narrow monitor into a staff control panel.

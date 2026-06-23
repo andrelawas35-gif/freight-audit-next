@@ -20,8 +20,46 @@ Open post-launch, hardening, and product roadmap work belongs here. Completed wo
   - Acceptance: a shipment-like payload plus a ruleset returns `ALLOW`, `WARN`, `BLOCK`, `REQUIRE_APPROVAL`, or `REQUIRE_DOCUMENTATION` decisions with clause references and suggested fixes.
 - [ ] Add historical policy backtest runner.
   - Acceptance: staff can run a ruleset against 12-24 months of client shipment/audit/insurance data and write reproducible `policy_backtest_runs` and `policy_backtest_results`.
+
+### Backtest Correctness (ADR 0001)
+
+Per [`adr/0001-backtest-shipment-context-model.md`](adr/0001-backtest-shipment-context-model.md)
+and [`policy-intelligence/04-backtest.md`](policy-intelligence/04-backtest.md). The current
+`runPolicyBacktest` / `loadBacktestContexts` predate these decisions.
+
+- [ ] Rebuild `loadBacktestContexts` around the shipment spine.
+  - Acceptance: one context per shipment, `"Shipments"` left-joined to invoices/audit-results and `shipment_insurance_audit_results`; an axis-crossing rule (`shipperVertical` + `declaredValueGte` + `carrierIn`) matches in a backtest.
+- [ ] Replace `LIMIT 5000` reads with keyset pagination over `"Shipments"`.
+  - Acceptance: a client with >5000 shipments is fully evaluated; no silent truncation.
+- [ ] De-duplicate preventable loss by `audit_result_id`; attribute at shipment grain.
+  - Acceptance: two rules matching one shipment do not double-count; `getGatewayAssessment` does not sum overlapping audit-ROI and backtest loss.
+- [ ] Multi-shipment invoices roll to shipment only when 1:1, else `DATA_REQUIRED`.
+  - Acceptance: no split/duplicated dollars; multi-shipment invoices are flagged, not silently attributed to `[0]`.
+- [ ] Tri-valued condition evaluation (`pass`/`fail`/`unknown`).
+  - Acceptance: a null input field yields `DATA_REQUIRED`, not a false violation or silent allow; readiness report separates uncertain-pending-data from preventable.
+- [ ] Select ruleset by shipment `"Ship date"`; enforce non-overlapping active rulesets.
+  - Acceptance: each shipment evaluated against the ruleset in force on its ship date; overlapping active rulesets for a client are rejected.
+- [ ] Validate `condition_json` keys against `PolicyCondition` at write time.
+  - Acceptance: an unknown/typo'd condition key is rejected in `addRuleAction`, not saved as a silently-dead active rule.
+- [ ] Backtest `preview` vs `official` modes; snapshot inputs for reproducibility.
+  - Acceptance: only `official` (active-rules-only) runs feed a client assessment; re-running an `official` run over the same period reproduces the numbers.
 - [ ] Add Gateway Readiness Assessment UI.
   - Acceptance: staff can generate a client assessment combining policy drift, preventable audit loss, uninsured exposure, top rules, and recommended gateway controls.
+
+### Policy Extraction Pipeline (ADR 0002)
+
+Per [`policy-intelligence/02-extraction.md`](policy-intelligence/02-extraction.md#extraction-architecture)
+and [`adr/0002-extraction-service-language-boundary.md`](adr/0002-extraction-service-language-boundary.md).
+Default to all-TypeScript on the existing queue.
+
+- [ ] Add `policy_extract` job type and worker.
+  - Acceptance: a document enqueues an extraction job claimed via `FOR UPDATE SKIP LOCKED`; status tracked on `policy_documents.extraction_status`; no second orchestrator/state store.
+- [ ] Wire LlamaParse (REST) for blob -> structured text.
+  - Acceptance: stored blob parsed to `raw_text` + tables; failures retry/surface, do not block other ingestion.
+- [ ] Cheap-model extraction with a shared Zod gate.
+  - Acceptance: candidates validated against the taxonomy `category` enum and `PolicyCondition` keys by the same validator `addRuleAction` uses; emitted rules are `status='draft'`, `signal_source='AI_SUGGESTED'`, with `document_id`+`clause_ref` lineage.
+- [ ] Mechanical escalation to Claude/OpenAI.
+  - Acceptance: escalate on schema-validation failure, ungrounded `clause_ref`, low cross-pass agreement, or low confidence; record which model produced each draft for precision tracking.
 
 ### Gateway Readiness Taxonomy
 

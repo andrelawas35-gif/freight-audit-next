@@ -97,112 +97,24 @@ Credentials must remain in environment variables. The console may queue a fetch 
 
 ## Gateway Data Collection at Ingestion
 
-The gateway roadmap depends on richer inputs. Capture these fields when available from WMS, carrier APIs, 3PL files, client uploads, or policy docs:
+The gateway roadmap depends on richer shipment inputs (commodity, declared value, package
+dims/weight, packaging certification, address/destination risk, carrier/service selected,
+signature option, insurance provider/amount, applied policy ID, source system + raw
+payload). Capture them when available from WMS, carrier APIs, 3PL files, or client uploads.
+The full field list is single-sourced in
+[`policy-intelligence/03-taxonomy.md`](policy-intelligence/03-taxonomy.md#shipment-fields-the-taxonomy-consumes).
 
-- item/category/commodity type;
-- SKU/order/reference;
-- declared value;
-- package dimensions and weight;
-- package type and packaging certification;
-- address classification and destination risk;
-- carrier/service selected;
-- signature option selected;
-- insurance provider;
-- insurance amount/cost;
-- policy ID or policy version applied;
-- source system and raw payload.
+**Do not block ingestion when a field is missing.** Stage the record and let downstream
+audit/gateway taxonomy mark `DATA_REQUIRED` or `DOCUMENTATION_MISSING`.
 
-Do not block ingestion when a field is missing. Stage the record and let audit/gateway taxonomy mark `DATA_REQUIRED` or insurance documentation gaps.
+## Policy document intake is a separate pipeline
 
-## High-Value Shipper Insurance Ingestion
-
-For high-value shippers, policy documents and shipment metadata are core source data. Jewelry is the first target, but collect data in a vertical-agnostic way so the gateway can support fine art, luxury goods, electronics, pharmaceuticals, medical devices, precious metals, regulated goods, wine/spirits, aerospace parts, event equipment, and sensitive documents.
-
-During onboarding, collect:
-
-- policy PDF/document;
-- insurer/broker;
-- effective dates;
-- max coverage per shipment/day;
-- deductible;
-- covered and excluded commodities;
-- allowed/excluded carriers and services;
-- declared value limits;
-- carrier declared value restrictions;
-- third-party insurance thresholds;
-- signature/adult signature thresholds;
-- destination exclusions or high-risk ZIP/country rules;
-- packaging and label-description requirements;
-- claim windows;
-- required claim documents;
-- chain-of-custody requirements.
-- shipper vertical and commodity categories;
-- appraisal thresholds and documentation requirements;
-- serial number requirements for electronics/devices;
-- temperature-control requirements for pharma, biotech, wine, and sensitive goods;
-- adult-signature or age-restricted delivery rules;
-- regulatory restrictions for firearms, alcohol, medical devices, hazardous or controlled goods;
-- approved carrier/service lanes;
-- high-risk destination tiers.
-
-Initial extraction may be manual. Store the structured result in `client_insurance_policies` and `insurance_policy_rules` once those tables exist. Do not rely only on notes.
-
-Use normalized values:
-
-```text
-shipper_vertical = jewelry | fine_art | luxury_goods | electronics | pharma | medical_device | precious_metals | regulated_goods | wine_spirits | aerospace_parts | event_equipment | sensitive_documents | other
-```
-
-When source data cannot provide a field, stage the record and mark the downstream audit/gateway result as `DATA_REQUIRED` or `DOCUMENTATION_MISSING`.
-
-## Policy Document Intake
-
-Policy intelligence intake is separate from shipment/invoice ingestion. Shipment ingestion answers "what happened?" Policy document intake answers "what should have happened?"
-
-MVP source types:
-
-- carrier contract;
-- carrier tariff guide;
-- 3PL SLA;
-- insurance policy or rider;
-- claims instruction;
-- shipping SOP;
-- packaging standard;
-- email exception or one-off approval.
-
-Future policy intake should write metadata to `policy_documents` and link each document to `client_policies` and a draft `policy_ruleset`. The system should preserve:
-
-- client;
-- policy/document type;
-- file name or source URL;
-- effective dates;
-- source owner;
-- extraction status;
-- extracted raw text when available;
-- analyst summary;
-- uploaded/reviewed by.
-
-Extraction flow:
-
-```text
-upload/source reference -> extract text -> classify document -> suggest clauses
--> analyst reviews -> structured policy_rules -> draft ruleset -> backtest
-```
-
-AI extraction is allowed only as a suggest-only helper. It may propose clauses, categories, and rule JSON, but it must not activate rules without staff review.
-
-The normalized output of policy intake should be structured rule data, not notes:
-
-- `rule_key`
-- `condition_json`
-- `action_json`
-- `severity`
-- `category`
-- `clause_ref`
-- `effective_from`
-- `effective_to`
-
-Policy document intake should not block regular invoice/shipment ingestion. Missing policy data should surface later as readiness gaps, not ingestion failures.
+Shipment ingestion (this doc) answers *"what happened?"* **Policy document** intake —
+contracts, tariffs, SLAs, insurance declarations, SOPs, email exceptions, plus
+high-value-shipper insurance onboarding and denied-claims history — answers *"what should
+have happened?"* and lives in its own staff-only pipeline. It must never block
+invoice/shipment ingestion. See
+[`policy-intelligence/01-ingestion.md`](policy-intelligence/01-ingestion.md).
 
 ## API Routes
 

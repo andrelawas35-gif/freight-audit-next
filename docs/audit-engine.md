@@ -78,64 +78,15 @@ Enforcement:
 - Migration `0004_gateway_insurance_intelligence.sql` adds DB check constraints for the same rule.
 - `gatewayTagToFields()` serializes typed tags to `"Audit Results"` column names.
 
-Recommended categories:
+The canonical category lists (gateway behavioral categories and high-value insurance risk
+categories), the decision/signal-source enums, and the example rule suggestions are
+single-sourced in
+[`policy-intelligence/03-taxonomy.md`](policy-intelligence/03-taxonomy.md) — do not
+re-list them here. The executable authority is `lib/intelligence/taxonomy.ts`.
 
-- `DIM_WEIGHT_PADDING`
-- `BOX_SIZE_MISMATCH`
-- `WRONG_SERVICE_LEVEL`
-- `ADDRESS_VALIDATION`
-- `RESIDENTIAL_FLAG`
-- `CARRIER_SELECTION`
-- `ACCESSORIAL_AVOIDABLE`
-- `LATE_SHIPMENT_RISK`
-- `DUPLICATE_ORDER_FLOW`
-- `THREE_PL_PICK_PACK_ERROR`
-- `STORAGE_PROCESS_ERROR`
-- `CARRIER_BILLING_GLITCH`
-- `FUEL_SURCHARGE_ERROR`
-- `CONTRACT_RATE_ERROR`
-- `DATA_REQUIRED`
-
-Example rule suggestion:
-
-```text
-If item weight is under 1 lb and commodity class is jewelry, warn when selected box exceeds 8x8x8.
-```
-
-## High-Value Insurance Taxonomy
-
-For high-value shippers, add insurance-oriented tags to audit results or `shipment_insurance_audit_results`.
-
-Recommended categories:
-
-- `DECLARED_VALUE_MISMATCH`
-- `UNDER_INSURED_SHIPMENT`
-- `OVER_INSURED_SHIPMENT`
-- `EXCLUDED_COMMODITY`
-- `INVALID_CARRIER_SERVICE`
-- `MISSING_SIGNATURE_REQUIRED`
-- `HIGH_RISK_DESTINATION`
-- `PACKAGING_NON_COMPLIANT`
-- `CHAIN_OF_CUSTODY_GAP`
-- `POLICY_LIMIT_EXCEEDED`
-- `CLAIM_WINDOW_RISK`
-- `THIRD_PARTY_INSURANCE_REQUIRED`
-- `CARRIER_DECLARED_VALUE_NOT_ALLOWED`
-- `DOCUMENTATION_MISSING`
-- `APPRAISAL_REQUIRED`
-- `SERIAL_NUMBER_REQUIRED`
-- `TEMPERATURE_CONTROL_MISSING`
-- `REGULATED_ITEM_NON_COMPLIANT`
-- `DESTINATION_RESTRICTED`
-- `APPROVED_CARRIER_REQUIRED`
-- `APPROVED_SERVICE_REQUIRED`
-
-Every insurance finding should answer:
-
-- Was this preventable pre-shipment?
-- Which policy clause was violated?
-- What gateway action would have prevented it: `ALLOW`, `WARN`, `BLOCK`, `REQUIRE_APPROVAL`, or `REQUIRE_DOCUMENTATION`?
-- What value was exposed?
+Every insurance finding should answer: was this preventable pre-shipment? which policy
+clause was violated? which gateway action (`ALLOW`/`WARN`/`BLOCK`/`REQUIRE_APPROVAL`/
+`REQUIRE_DOCUMENTATION`) would have prevented it? what value was exposed?
 
 ## Rulebook (`lib/audit/rulebook.ts`)
 
@@ -185,59 +136,13 @@ The policy evaluator asks:
 Should this shipment have been allowed under the client's contract, insurance, SLA, SOP, and exception rules?
 ```
 
-Keep these concerns separate, but allow their outputs to join in Gateway Readiness reporting. A shipment can be:
+Keep these concerns separate, but allow their outputs to join in Gateway Readiness reporting. A shipment can be financially correct but policy non-compliant, financially incorrect but not preventable, both, or blockable pre-shipment with no invoice discrepancy at all.
 
-- financially correct but policy non-compliant;
-- financially incorrect but not preventable by the gateway;
-- both financially incorrect and preventable;
-- blocked/warnable pre-shipment even if no carrier invoice discrepancy exists.
-
-### Evaluator Inputs
-
-The evaluator should accept:
-
-- client ID;
-- shipment/order context;
-- carrier and service;
-- package dimensions/weight/type;
-- destination and address risk;
-- commodity/vertical;
-- declared value and insured value;
-- insurance provider;
-- documentation received;
-- active policy ruleset version;
-- optional linked invoice/audit result/claim context for backtests.
-
-### Evaluator Output
-
-Each decision should include:
-
-- `decision`: `ALLOW`, `WARN`, `BLOCK`, `REQUIRE_APPROVAL`, or `REQUIRE_DOCUMENTATION`;
-- `rule_key`;
-- `category`;
-- `message`;
-- `suggested_fix`;
-- `clause_ref`;
-- `confidence`;
-- estimated preventable loss or uninsured exposure when measurable.
-
-### Backtest Rules
-
-Historical policy backtests must write to `policy_backtest_runs` and `policy_backtest_results`. They should not mutate source shipments, invoices, or existing audit results.
-
-Backtests should be reproducible:
-
-- store the ruleset ID/version;
-- store the historical period;
-- store aggregate counts and dollars;
-- store one result row per violated rule;
-- keep clause references for analyst/client explanation.
-
-Gateway Readiness Assessments then combine:
-
-- `policy_backtest_results` for policy drift;
-- `"Audit Results"` gateway metadata for preventable financial loss;
-- `shipment_insurance_audit_results` for uninsured exposure.
+The evaluator contract (inputs/outputs), backtest reproducibility rules, effective-dated
+ruleset selection, and how assessments combine backtest drift + audit gateway metadata +
+insurance exposure are single-sourced in
+[`policy-intelligence/04-backtest.md`](policy-intelligence/04-backtest.md) and
+[`policy-intelligence/05-readiness.md`](policy-intelligence/05-readiness.md).
 
 ## Job Queue (`lib/audit/jobs.ts`)
 

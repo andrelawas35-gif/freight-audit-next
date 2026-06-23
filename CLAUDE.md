@@ -88,7 +88,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 | [`docs/disputes.md`](docs/disputes.md) | Dispute pipeline, response parser, outcomes, templates |
 | [`docs/portal.md`](docs/portal.md) | Client portal and staff console UI, density, components, scoping |
 | [`docs/auth.md`](docs/auth.md) | Auth.js, middleware, roles, route protection |
-| [`docs/gateway-readiness.md`](docs/gateway-readiness.md) | Policy Intelligence MVP, gateway taxonomy, behavioral tags, insurance intelligence, readiness reports |
+| [`docs/policy-intelligence/`](docs/policy-intelligence/README.md) | Policy Intelligence concern (single source): pipeline, glossary, policy intake, extraction, taxonomy enums, backtest, readiness, schema. Start at the module README. (`docs/gateway-readiness.md` is now a redirect stub.) |
 | [`docs/LAUNCH-BLOCKERS.md`](docs/LAUNCH-BLOCKERS.md) | Open launch blockers only |
 | [`docs/observability.md`](docs/observability.md) | Sentry, structured logging, health checks, correlation IDs |
 | [`docs/BACKLOG.md`](docs/BACKLOG.md) | Open post-launch and product buildout work only |

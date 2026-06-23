@@ -56,6 +56,11 @@ JWT strategy. Token/session carries:
 
 ## Gateway, Policy, and Insurance Security
 
+> Security controls for the Policy Intelligence concern (modeled in
+> [`policy-intelligence/`](policy-intelligence/README.md); the AI suggest-only trust
+> boundary is detailed in
+> [`policy-intelligence/02-extraction.md`](policy-intelligence/02-extraction.md#trust-boundary)).
+
 Policy intelligence data may include sensitive coverage limits, broker details, exclusions, risk controls, carrier contract terms, 3PL pricing, operational SOPs, and client exception approvals. Treat it as client-confidential:
 
 - staff console only by default;
