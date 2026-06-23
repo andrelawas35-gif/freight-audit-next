@@ -104,7 +104,7 @@ export default async function GatewayReadinessPage({
                 <tr key={run.id}>
                   <td className="mono">{run.id}</td>
                   <td><Badge color={run.status === 'completed' ? 'green' : run.status === 'failed' ? 'hot' : 'amber'}>{run.status}</Badge></td>
-                  <td className="mono">{run.period_start} -> {run.period_end}</td>
+                  <td className="mono">{run.period_start} {'->'} {run.period_end}</td>
                   <td className="mono">{run.shipments_checked}</td>
                   <td className="mono">{run.violations_found}</td>
                   <td className="mono">{usd(run.preventable_margin_loss)}</td>
