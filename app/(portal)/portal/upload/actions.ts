@@ -13,6 +13,7 @@ import { auth } from '@/auth';
 import { parseClientShipmentCsv } from '@/lib/ingestion/client/generic-csv';
 import { stageClientShipment } from '@/lib/ingestion/normalize';
 import { recordUpload } from '@/lib/ingestion/uploads';
+import { log, withCorrelationId, generateCorrelationId } from '@/lib/logger';
 
 export type UploadResult = {
   ok: boolean;
@@ -28,77 +29,90 @@ export async function uploadShipments(
   _prev: UploadResult | undefined,
   formData: FormData
 ): Promise<UploadResult> {
-  const session = await auth();
-  const clientId = session?.user?.clientId;
-  if (!clientId) {
-    return { ok: false, error: 'Your account is not linked to a client company yet.' };
-  }
+  return withCorrelationId(generateCorrelationId(), async () => {
+    const session = await auth();
+    const clientId = session?.user?.clientId;
+    if (!clientId) {
+      return { ok: false, error: 'Your account is not linked to a client company yet.' };
+    }
 
-  const file = formData.get('file');
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: 'Please choose a CSV file to upload.' };
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    return { ok: false, error: 'File is too large (max 10 MB).' };
-  }
+    const file = formData.get('file');
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: 'Please choose a CSV file to upload.' };
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return { ok: false, error: 'File is too large (max 10 MB).' };
+    }
 
-  let text: string;
-  try {
-    text = await file.text();
-  } catch {
-    return { ok: false, error: 'Could not read the file.' };
-  }
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      return { ok: false, error: 'Could not read the file.' };
+    }
 
-  const { shipments, rowCount, skipped, dataHealth } = parseClientShipmentCsv(text, clientId);
+    const { shipments, rowCount, skipped, dataHealth } = parseClientShipmentCsv(text, clientId);
 
-  if (shipments.length === 0) {
+    if (shipments.length === 0) {
+      await recordUpload({
+        clientId,
+        uploadedBy: session.user?.email ?? null,
+        fileName: file.name,
+        rows: rowCount,
+        staged: 0,
+        skipped,
+        failed: 0,
+        dataHealth: 0,
+        status: 'no_rows',
+      });
+      log.warn('upload produced no usable rows', { clientId, fileName: file.name, rowCount, skipped });
+      revalidatePath('/portal/upload');
+      return {
+        ok: false,
+        error:
+          'No usable rows found. Each row needs at least a tracking number or PRO number. Check your column headers.',
+        rows: rowCount,
+        skipped,
+      };
+    }
+
+    let staged = 0;
+    let failed = 0;
+    for (const s of shipments) {
+      try {
+        await stageClientShipment(s);
+        staged++;
+      } catch (err) {
+        failed++;
+        log.error('stageClientShipment failed during upload', { err: err as Error, clientId });
+      }
+    }
+
     await recordUpload({
       clientId,
       uploadedBy: session.user?.email ?? null,
       fileName: file.name,
       rows: rowCount,
-      staged: 0,
+      staged,
       skipped,
-      failed: 0,
-      dataHealth: 0,
-      status: 'no_rows',
+      failed,
+      dataHealth,
+      status: failed > 0 ? 'partial' : 'ok',
     });
-    revalidatePath('/portal/upload');
-    return {
-      ok: false,
-      error:
-        'No usable rows found. Each row needs at least a tracking number or PRO number. Check your column headers.',
+
+    log.info('client CSV upload completed', {
+      clientId,
+      fileName: file.name,
       rows: rowCount,
+      staged,
       skipped,
-    };
-  }
+      failed,
+      dataHealth,
+    });
 
-  let staged = 0;
-  let failed = 0;
-  for (const s of shipments) {
-    try {
-      await stageClientShipment(s);
-      staged++;
-    } catch (err) {
-      failed++;
-      console.error('stageClientShipment failed:', err);
-    }
-  }
+    revalidatePath('/portal/upload');
+    revalidatePath('/portal');
 
-  await recordUpload({
-    clientId,
-    uploadedBy: session.user?.email ?? null,
-    fileName: file.name,
-    rows: rowCount,
-    staged,
-    skipped,
-    failed,
-    dataHealth,
-    status: failed > 0 ? 'partial' : 'ok',
+    return { ok: true, staged, rows: rowCount, skipped, failed, dataHealth };
   });
-
-  revalidatePath('/portal/upload');
-  revalidatePath('/portal');
-
-  return { ok: true, staged, rows: rowCount, skipped, failed, dataHealth };
 }

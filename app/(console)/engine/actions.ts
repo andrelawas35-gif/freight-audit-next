@@ -7,6 +7,7 @@
 
 import { auth } from '@/auth';
 import { enqueueAudit } from '@/lib/audit/jobs';
+import { log, withCorrelationId, generateCorrelationId } from '@/lib/logger';
 
 export type EnqueueResult = {
   ok: boolean;
@@ -18,27 +19,31 @@ export async function triggerAudit(
   _prev: EnqueueResult | undefined,
   formData: FormData
 ): Promise<EnqueueResult> {
-  const session = await auth();
-  if (session?.user?.role !== 'staff') {
-    return { ok: false, error: 'Staff access required.' };
-  }
+  return withCorrelationId(generateCorrelationId(), async () => {
+    const session = await auth();
+    if (session?.user?.role !== 'staff') {
+      return { ok: false, error: 'Staff access required.' };
+    }
 
-  const clientIdRaw = String(formData.get('clientId') || '').trim();
-  const clientId = clientIdRaw || undefined;
-  const dryRun = formData.get('dryRun') === 'on';
-  const jobType = (formData.get('jobType') as 'parcel' | '3pl' | 'sftp_fetch' | 'data_clerk') || 'parcel';
+    const clientIdRaw = String(formData.get('clientId') || '').trim();
+    const clientId = clientIdRaw || undefined;
+    const dryRun = formData.get('dryRun') === 'on';
+    const jobType = (formData.get('jobType') as 'parcel' | '3pl' | 'sftp_fetch' | 'data_clerk') || 'parcel';
 
-  try {
-    const job = await enqueueAudit({
-      jobType,
-      clientId,
-      dryRun,
-      triggeredBy: session.user?.email ?? 'staff',
-    });
+    try {
+      const job = await enqueueAudit({
+        jobType,
+        clientId,
+        dryRun,
+        triggeredBy: session.user?.email ?? 'staff',
+      });
 
-    return { ok: true, jobId: job.id };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
-  }
+      log.info('audit job enqueued from console', { jobId: job.id, jobType, clientId, dryRun });
+      return { ok: true, jobId: job.id };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error('audit enqueue failed', { err: err as Error, jobType, clientId });
+      return { ok: false, error: message };
+    }
+  });
 }
