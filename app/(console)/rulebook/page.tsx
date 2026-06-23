@@ -8,6 +8,7 @@
 import { fetchRecords } from '@/lib/airtable';
 import { loadRulebook } from '@/lib/audit/rulebook';
 import { AddRule, RulesTable } from '@/components/console/rulebook-admin';
+import { KPI, SectionLabel } from '@/components/ui/primitives';
 import type { Client, Carrier } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -37,18 +38,55 @@ export default async function RulebookPage() {
 
   const clientNames = Object.fromEntries(clients.map((c) => [c.id, c.name]));
 
+  const globalCount = rows.filter((r) => r.scope === 'global').length;
+  const carrierCount = rows.filter((r) => r.scope === 'carrier').length;
+  const contractCount = rows.filter((r) => r.scope === 'contract').length;
+
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1100, margin: '0 auto' }}>
-      <div>
-        <h1 style={{ fontSize: 18, fontWeight: 800 }}>Rulebook</h1>
-        <p style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>
-          Audit thresholds by scope. Most specific wins: a client contract overrides the
-          carrier standard, which overrides the global default.
-        </p>
+
+      {/* Summary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <KPI
+          label="Total rules"
+          accentBar="var(--blue)"
+          value={String(rows.length)}
+          sub="active thresholds"
+        />
+        <KPI
+          label="Global defaults"
+          value={String(globalCount)}
+          sub="base thresholds"
+        />
+        <KPI
+          label="Carrier overrides"
+          tone={carrierCount > 0 ? 'amber' : 'ink'}
+          value={String(carrierCount)}
+          sub="carrier-specific"
+        />
+        <KPI
+          label="Client contracts"
+          tone={contractCount > 0 ? 'green' : 'ink'}
+          value={String(contractCount)}
+          sub="highest precedence"
+        />
       </div>
 
-      <AddRule clients={clients} carriers={carriers} />
-      <RulesTable rows={rows} clientNames={clientNames} />
+      {/* Add rule form */}
+      <div>
+        <SectionLabel>Add / override a rule</SectionLabel>
+        <AddRule clients={clients} carriers={carriers} />
+      </div>
+
+      {/* Rules table */}
+      <div>
+        <SectionLabel right={
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+            contract → carrier → global
+          </span>
+        }>Active rules</SectionLabel>
+        <RulesTable rows={rows} clientNames={clientNames} />
+      </div>
     </div>
   );
 }

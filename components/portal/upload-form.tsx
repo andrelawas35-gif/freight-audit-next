@@ -1,124 +1,44 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { uploadShipments, type UploadResult } from '@/app/(portal)/portal/upload/actions';
 
-// Clean template matching the recognized headers (see generic-csv.ts)
-const TEMPLATE_HEADERS = [
-  'Tracking Number', 'PRO Number', 'Reference', 'Carrier', 'Weight',
-  'Length', 'Width', 'Height', 'Origin Zip', 'Destination Zip',
-  'Address Type', 'Service Level', 'Ship Date',
-];
-const TEMPLATE_SAMPLE = [
-  '1Z999AA10123456784', '', 'PO-1001', 'UPS', '12.5',
-  '14', '10', '8', '07105', '90210',
-  'Commercial', 'Ground', '2026-06-10',
-];
+const TEMPLATE_HEADERS = ['Tracking Number', 'PRO Number', 'Reference', 'Carrier', 'Weight', 'Length', 'Width', 'Height', 'Origin Zip', 'Destination Zip', 'Address Type', 'Service Level', 'Ship Date'];
+const TEMPLATE_SAMPLE = ['1Z999AA10123456784', '', 'PO-1001', 'UPS', '12.5', '14', '10', '8', '07105', '90210', 'Commercial', 'Ground', '2026-06-10'];
 
 function downloadTemplate() {
-  const csv = TEMPLATE_HEADERS.join(',') + '\n' + TEMPLATE_SAMPLE.join(',') + '\n';
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'aurelian-shipment-template.csv';
-  a.click();
+  const url = URL.createObjectURL(new Blob([`${TEMPLATE_HEADERS.join(',')}\n${TEMPLATE_SAMPLE.join(',')}\n`], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'aurelian-shipment-template.csv'; anchor.click();
   URL.revokeObjectURL(url);
 }
 
-function HealthBar({ pct }: { pct: number }) {
-  const tone = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'oklch(0.70 0.16 25)';
-  return (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 4, color: 'var(--ink-2)' }}>
-        <span>Data health · rows with usable dimensions</span>
-        <span style={{ fontWeight: 700 }}>{pct}%</span>
-      </div>
-      <div style={{ height: 7, borderRadius: 99, background: 'var(--surface-sunk)', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: tone, transition: 'width 0.4s ease' }} />
-      </div>
-      {pct < 80 && (
-        <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 5 }}>
-          Rows missing length/width/height/weight can’t be checked for dim-weight overcharges.
-        </div>
-      )}
+export function UploadForm() {
+  const [state, formAction, pending] = useActionState<UploadResult | undefined, FormData>(uploadShipments, undefined);
+  const [file, setFile] = useState<File | null>(null);
+  const [clientError, setClientError] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return <form action={formAction} onSubmit={(event) => { if (!file) { event.preventDefault(); setClientError('Choose a CSV file before uploading.'); } }}>
+    <div className="portal-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+      event.preventDefault(); const next = event.dataTransfer.files[0];
+      if (next?.name.toLowerCase().endsWith('.csv')) { setFile(next); setClientError(''); if (inputRef.current) { const transfer = new DataTransfer(); transfer.items.add(next); inputRef.current.files = transfer.files; } }
+      else setClientError('Only CSV files are accepted.');
+    }}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" /></svg>
+      <strong>Drag and drop your CSV here, or</strong>
+      <button type="button" className="portal-primary-button" onClick={() => inputRef.current?.click()}>Choose file</button>
+      <input ref={inputRef} id="file" name="file" type="file" accept=".csv,text/csv" hidden onChange={(event) => { const next = event.target.files?.[0] || null; setFile(next); setClientError(''); }} />
     </div>
-  );
+
+    {file ? <div className="portal-selected-file"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" /></svg><div><strong>{file.name}</strong><span>{(file.size / 1024).toFixed(1)} KB</span></div><button type="button" onClick={() => { setFile(null); if (inputRef.current) inputRef.current.value = ''; }} aria-label="Remove file">x</button></div> : null}
+
+    <div className="portal-upload-actions"><button type="submit" className="portal-primary-button" disabled={pending}>{pending ? 'Uploading...' : 'Upload & stage'}</button><button type="button" className="portal-ghost-button" onClick={downloadTemplate}>Download template</button></div>
+
+    {clientError ? <div className="portal-upload-message error"><strong>Upload unavailable</strong><span>{clientError}</span></div> : null}
+    {state ? <div className={`portal-upload-message ${state.ok ? 'success' : 'error'}`}><strong>{state.ok ? 'Upload successful' : 'Upload failed'}</strong><span>{state.ok ? `${state.staged} shipment(s) staged from ${state.rows} row(s).${state.skipped ? ` ${state.skipped} skipped.` : ''}` : state.error}</span>{state.ok && typeof state.dataHealth === 'number' ? <HealthBar pct={state.dataHealth} /> : null}</div> : null}
+  </form>;
 }
 
-export function UploadForm() {
-  const [state, formAction, pending] = useActionState<UploadResult | undefined, FormData>(
-    uploadShipments,
-    undefined
-  );
-
-  return (
-    <form action={formAction}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
-          <label htmlFor="file" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)' }}>
-            Shipment CSV file
-          </label>
-          <button
-            type="button"
-            onClick={downloadTemplate}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'transparent', border: '1px solid var(--line)',
-              borderRadius: 'var(--radius-sm)', padding: '5px 10px',
-              fontSize: 11.5, fontWeight: 600, color: 'var(--blue-ink)', cursor: 'pointer',
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v12M7 11l5 4 5-4M5 21h14" />
-            </svg>
-            Download template
-          </button>
-        </div>
-
-        <input
-          id="file"
-          name="file"
-          type="file"
-          accept=".csv,text/csv"
-          required
-          style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 16, display: 'block' }}
-        />
-
-        <button
-          type="submit"
-          disabled={pending}
-          style={{
-            background: 'var(--blue)', color: 'oklch(0.16 0.02 244)', border: 'none',
-            borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: 13, fontWeight: 700,
-            cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1,
-          }}
-        >
-          {pending ? 'Uploading…' : 'Upload & stage'}
-        </button>
-      </div>
-
-      {state && (
-        <div
-          style={{
-            marginTop: 14, borderRadius: 'var(--radius-sm)', padding: '12px 14px', fontSize: 12.5,
-            background: state.ok ? 'var(--green-soft)' : 'oklch(0.30 0.08 25)',
-            border: `1px solid ${state.ok ? 'var(--green-line)' : 'oklch(0.44 0.12 25)'}`,
-            color: state.ok ? 'var(--green-ink)' : 'oklch(0.86 0.10 25)',
-          }}
-        >
-          {state.ok ? (
-            <>
-              Staged <strong>{state.staged}</strong> shipment(s) from {state.rows} row(s).
-              {state.skipped ? ` ${state.skipped} skipped (no tracking/PRO).` : ''}
-              {state.failed ? ` ${state.failed} failed.` : ''}
-              {typeof state.dataHealth === 'number' && <HealthBar pct={state.dataHealth} />}
-            </>
-          ) : (
-            state.error
-          )}
-        </div>
-      )}
-    </form>
-  );
+function HealthBar({ pct }: { pct: number }) {
+  return <div className="portal-health"><div><span>Rows with usable dimensions</span><strong>{pct}%</strong></div><div><span style={{ width: `${pct}%` }} /></div></div>;
 }

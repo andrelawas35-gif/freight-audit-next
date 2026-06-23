@@ -5,18 +5,7 @@
   (prevents double-uploads, gives controllers a paper trail).
 */
 
-import { neon, types } from '@neondatabase/serverless';
-
-types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
-
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql() {
-  if (_sql) return _sql;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-  _sql = neon(url);
-  return _sql;
-}
+import { getSql } from '@/lib/db';
 
 export type UploadLog = {
   id: string;

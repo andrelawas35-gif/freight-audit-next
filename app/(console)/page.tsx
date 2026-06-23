@@ -150,33 +150,34 @@ export default async function TodayPage() {
           <>
             {/* 3. Add the KPI Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-              <KPI 
-                label="Recovered This Month" 
-                tone="green" 
+              <KPI
+                label="Recovered This Month"
+                tone="green"
                 accentBar="var(--green)"
                 value={fmtUSD(0)}
               />
-              <KPI 
-                label="Active Exposure" 
-                tone="amber" 
+              <KPI
+                label="Active Exposure"
+                tone="amber"
                 accentBar="var(--amber)"
                 value={fmtUSD(0)}
                 sub={`${statusCounts.open} active disputes`}
               />
-              <KPI 
-                label="Action Required" 
+              <KPI
+                label="Action Required"
                 tone="ink"
                 accentBar="var(--blue)"
-                value={<Ticker value={stats.flaggedNew} />} 
+                value={<Ticker value={stats.flaggedNew} />}
                 sub="New anomalies flagged"
               />
-            </div>
-                <KPI 
-                label="Win Rate" 
+              <KPI
+                label="Win Rate"
                 tone="green"
+                accentBar="var(--green)"
                 value={`${Math.round(stats.winRate * 100)}%`}
                 sub="across resolved disputes"
               />
+            </div>
 
             {/* 4. Add the Chart & Pipeline Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>

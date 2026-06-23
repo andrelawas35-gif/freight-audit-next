@@ -19,24 +19,7 @@
     const disputes = await fetchRecords('Disputes', { filterByFormula: `{Status} = 'Open'` });
 */
 
-import { neon, types } from '@neondatabase/serverless';
-
-// Postgres returns numeric/bigint as strings to preserve precision, but the
-// app (and the old Airtable layer) expect JS numbers for arithmetic. Coerce
-// numeric (OID 1700) and bigint (OID 20) back to numbers globally.
-types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
-types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
-
-// ── connect ──────────────────────────────────────────────────
-let _sql: ReturnType<typeof neon> | null = null;
-
-function getSql() {
-  if (_sql) return _sql;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-  _sql = neon(url);
-  return _sql;
-}
+import { getSql } from '@/lib/db';
 
 // ── table name shortcuts ─────────────────────────────────────
 // These map 1:1 to Postgres table names (quoted, case-sensitive).
@@ -56,6 +39,24 @@ export type TableName =
 
 type Row = { id: string; [key: string]: unknown };
 
+export type RecordQueryOptions = {
+  filterByFormula?: string;
+  sort?: { field: string; direction?: 'asc' | 'desc' }[];
+  maxRecords?: number;
+  fields?: string[];   // accepted for compatibility; we always SELECT *
+  view?: string;       // accepted for compatibility; ignored
+};
+
+const DEFAULT_RECORD_LIMIT = 100;
+const DEFAULT_PAGE_SIZE = 500;
+
+function positiveInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
 // ── filterByFormula → SQL WHERE translator ───────────────────
 // Supports exactly the Airtable formula shapes this codebase uses:
 //   {Field} = 'value'           → "Field" = $n
@@ -65,7 +66,7 @@ type Row = { id: string; [key: string]: unknown };
 //   AND(expr, expr, ...)        → (expr AND expr ...)
 //   FIND("rec123", ARRAYJOIN({Link})) → $n = ANY("Link")
 // Throws on anything unrecognized so we never silently return wrong data.
-function translateFormula(
+export function translateFormula(
   formula: string,
   params: unknown[]
 ): string {
@@ -110,7 +111,7 @@ function translateFormula(
 
 // Split a comma-separated argument list at the top level only
 // (ignores commas nested inside parentheses or quotes).
-function splitTopLevel(s: string): string[] {
+export function splitTopLevel(s: string): string[] {
   const out: string[] = [];
   let depth = 0;
   let quote: string | null = null;
@@ -132,7 +133,7 @@ function splitTopLevel(s: string): string[] {
 }
 
 // Quote an identifier (table or column), escaping embedded quotes.
-function quoteIdent(name: string): string {
+export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
@@ -140,13 +141,7 @@ function quoteIdent(name: string): string {
 // Returns a flat array of { id, ...fields } objects — same shape as before.
 export async function fetchRecords(
   tableName: TableName,
-  options: {
-    filterByFormula?: string;
-    sort?: { field: string; direction?: 'asc' | 'desc' }[];
-    maxRecords?: number;
-    fields?: string[];   // accepted for compatibility; we always SELECT *
-    view?: string;       // accepted for compatibility; ignored
-  } = {}
+  options: RecordQueryOptions = {}
 ): Promise<Row[]> {
   const sql = getSql();
   const params: unknown[] = [];
@@ -164,11 +159,107 @@ export async function fetchRecords(
     query += ` ORDER BY ${orderBy}`;
   }
 
-  const limit = options.maxRecords ?? 100;
-  query += ` LIMIT ${Number(limit)}`;
+  const limit = positiveInteger(options.maxRecords ?? DEFAULT_RECORD_LIMIT, 'maxRecords');
+  params.push(limit);
+  query += ` LIMIT $${params.length}`;
 
   const rows = (await sql.query(query, params)) as Row[];
   return rows;
+}
+
+// Read every matching row using stable keyset pagination. This is intended for
+// financial-processing paths where an arbitrary LIMIT would silently omit data.
+// UI pages should continue using fetchRecords() with an explicit display limit.
+export async function fetchAllRecords(
+  tableName: TableName,
+  options: Omit<RecordQueryOptions, 'maxRecords' | 'sort'> & {
+    pageSize?: number;
+    createdBefore?: string;
+  } = {}
+): Promise<Row[]> {
+  const sql = getSql();
+  const pageSize = positiveInteger(options.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize');
+  const rows: Row[] = [];
+  let afterId: string | null = null;
+
+  while (true) {
+    const params: unknown[] = [];
+    const where: string[] = [];
+
+    if (options.filterByFormula && options.filterByFormula.trim()) {
+      where.push(translateFormula(options.filterByFormula, params));
+    }
+    if (options.createdBefore) {
+      params.push(options.createdBefore);
+      where.push(`created_at <= $${params.length}::timestamptz`);
+    }
+    if (afterId) {
+      params.push(afterId);
+      where.push(`id > $${params.length}`);
+    }
+
+    let query = `SELECT * FROM ${quoteIdent(tableName)}`;
+    if (where.length) query += ` WHERE ${where.join(' AND ')}`;
+    query += ' ORDER BY id ASC';
+    params.push(pageSize);
+    query += ` LIMIT $${params.length}`;
+
+    const page = (await sql.query(query, params)) as Row[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    afterId = page[page.length - 1].id;
+  }
+
+  return rows;
+}
+
+// Resolve linked records in bounded chunks without constructing a very large
+// OR formula or truncating at an arbitrary record limit.
+export async function fetchRecordsByIds(
+  tableName: TableName,
+  recordIds: string[],
+  chunkSize = DEFAULT_PAGE_SIZE
+): Promise<Row[]> {
+  const sql = getSql();
+  const size = positiveInteger(chunkSize, 'chunkSize');
+  const uniqueIds = [...new Set(recordIds.filter(Boolean))];
+  const rows: Row[] = [];
+
+  for (let i = 0; i < uniqueIds.length; i += size) {
+    const chunk = uniqueIds.slice(i, i + size);
+    const page = (await sql.query(
+      `SELECT * FROM ${quoteIdent(tableName)} WHERE id = ANY($1::text[]) ORDER BY id ASC`,
+      [chunk]
+    )) as Row[];
+    rows.push(...page);
+  }
+
+  return rows;
+}
+
+// Fetch rows whose Airtable-style linked-record array overlaps a set of ids.
+// Results are de-duplicated because one row may overlap more than one chunk.
+export async function fetchRecordsByLinkedIds(
+  tableName: TableName,
+  linkField: string,
+  linkedIds: string[],
+  chunkSize = DEFAULT_PAGE_SIZE
+): Promise<Row[]> {
+  const sql = getSql();
+  const size = positiveInteger(chunkSize, 'chunkSize');
+  const uniqueIds = [...new Set(linkedIds.filter(Boolean))];
+  const byId = new Map<string, Row>();
+
+  for (let i = 0; i < uniqueIds.length; i += size) {
+    const chunk = uniqueIds.slice(i, i + size);
+    const page = (await sql.query(
+      `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(linkField)} && $1::text[] ORDER BY id ASC`,
+      [chunk]
+    )) as Row[];
+    for (const row of page) byId.set(row.id, row);
+  }
+
+  return [...byId.values()];
 }
 
 // ── read one record ──────────────────────────────────────────
@@ -237,16 +328,63 @@ export async function updateRecord(
   return rows[0];
 }
 
-// ── batch create ─────────────────────────────────────────────
-// Airtable capped at 10/call; Postgres has no such limit, but we keep the
-// same signature and return shape. Inserts run sequentially for simplicity.
+// ── batch create (transactional) ─────────────────────────────
+// Wraps all inserts in a single transaction — if any insert fails, the
+// entire batch rolls back. Prevents orphaned partial-write states.
+// Pass { inTransaction: true } when the caller already holds a BEGIN.
 export async function batchCreate(
   tableName: TableName,
-  recordsData: Record<string, unknown>[]
+  recordsData: Record<string, unknown>[],
+  opts?: { inTransaction?: boolean }
 ): Promise<Row[]> {
+  if (recordsData.length === 0) return [];
+
+  const sql = getSql();
   const results: Row[] = [];
-  for (const fields of recordsData) {
-    results.push(await createRecord(tableName, fields));
+  const ownTx = !opts?.inTransaction;
+
+  if (ownTx) await sql.query('BEGIN');
+  try {
+    for (const fields of recordsData) {
+      const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+      if (entries.length === 0) {
+        const rows = (await sql.query(
+          `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES RETURNING *`, []
+        )) as Row[];
+        results.push(rows[0]);
+      } else {
+        const cols = entries.map(([k]) => quoteIdent(k)).join(', ');
+        const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
+        const values = entries.map(([, v]) => v);
+        const rows = (await sql.query(
+          `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${placeholders}) RETURNING *`,
+          values
+        )) as Row[];
+        results.push(rows[0]);
+      }
+    }
+    if (ownTx) await sql.query('COMMIT');
+  } catch (err) {
+    if (ownTx) await sql.query('ROLLBACK');
+    throw err;
   }
+
   return results;
+}
+
+// ── safe field-level lookup (bypasses formula translator) ────
+// Use this instead of filterByFormula when the lookup value comes
+// from external input (invoice numbers, tracking numbers, etc.).
+export async function findByField(
+  tableName: TableName,
+  field: string,
+  value: string,
+  limit = 1
+): Promise<Row[]> {
+  const sql = getSql();
+  const rows = (await sql.query(
+    `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(field)} = $1 LIMIT $2`,
+    [value, limit]
+  )) as Row[];
+  return rows;
 }

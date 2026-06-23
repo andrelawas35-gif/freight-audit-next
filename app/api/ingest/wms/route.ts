@@ -11,43 +11,41 @@
   Shopify webhook: configure to POST to this URL on "fulfillments/create" event.
 */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { normalizeFromShipStation } from '@/lib/ingestion/client/shipstation';
 import { normalizeFromShopify }     from '@/lib/ingestion/client/shopify';
 import { stageClientShipment }      from '@/lib/ingestion/normalize';
+import { withObservability }        from '@/lib/api-handler';
 
-export async function POST(req: NextRequest) {
+const bodySchema = z.object({
+  source: z.enum(['shipstation', 'shopify']),
+  clientId: z.string().min(1, 'clientId is required'),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const POST = withObservability('ingest/wms', async (req, { log }) => {
   const secret = req.headers.get('x-ingest-secret');
   if (secret !== process.env.INGEST_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    const body = await req.json();
-    const { source, clientId, payload } = body as {
-      source: 'shipstation' | 'shopify';
-      clientId: string;
-      payload: unknown;
-    };
-
-    if (!clientId) {
-      return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
-    }
-
-    let normalized;
-    if (source === 'shipstation') {
-      normalized = normalizeFromShipStation(payload as any, clientId);
-    } else if (source === 'shopify') {
-      normalized = normalizeFromShopify(payload as any, clientId);
-    } else {
-      return NextResponse.json({ error: `Unknown source: ${source}` }, { status: 400 });
-    }
-
-    const shipmentId = await stageClientShipment(normalized);
-    return NextResponse.json({ ok: true, shipmentId });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[ingest/wms]', message);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  const raw = await req.json();
+  const parsed = bodySchema.safeParse(raw);
+  if (!parsed.success) {
+    log.warn('invalid WMS body', { details: parsed.error.flatten() });
+    return NextResponse.json(
+      { ok: false, error: 'Invalid request body', details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
-}
+  const { source, clientId, payload } = parsed.data;
+
+  const normalized = source === 'shipstation'
+    ? normalizeFromShipStation(payload as any, clientId)
+    : normalizeFromShopify(payload as any, clientId);
+
+  const shipmentId = await stageClientShipment(normalized);
+  log.info('shipment staged', { shipmentId, source, clientId });
+  return NextResponse.json({ ok: true, shipmentId });
+});

@@ -10,6 +10,7 @@ import { listExceptions } from '@/lib/ingestion/mappings';
 import { clerkEnabled } from '@/lib/ingestion/data-clerk';
 import { STANDARD_ACCESSORIALS } from '@/lib/ingestion/accessorial-map';
 import { ExceptionsQueue } from '@/components/console/exceptions-queue';
+import { KPI, SectionLabel } from '@/components/ui/primitives';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,18 +22,56 @@ export default async function ExceptionsPage() {
     console.error('Exceptions load failed:', err);
   }
 
+  const accessorialCount = rows.filter((r) => r.mapping_type === 'accessorial').length;
+  const serviceLevelCount = rows.filter((r) => r.mapping_type === 'service_level').length;
+  const totalOccurrences = rows.reduce((s, r) => s + r.occurrences, 0);
+
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1100, margin: '0 auto' }}>
+
+      {/* Breadcrumb */}
       <div>
-        <Link href="/ingestion" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>← Ingestion</Link>
-        <h1 style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>Exceptions queue</h1>
-        <p style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>
-          Codes the parser didn’t recognize. Map each once — the system remembers and
-          applies it automatically on future ingests.
-        </p>
+        <Link href="/ingestion" style={{ fontSize: 11.5, color: 'var(--ink-3)', textDecoration: 'none' }}>
+          ← Ingestion
+        </Link>
       </div>
 
-      <ExceptionsQueue rows={rows} accessorials={STANDARD_ACCESSORIALS} clerkEnabled={clerkEnabled()} />
+      {/* Summary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <KPI
+          label="Open exceptions"
+          tone={rows.length > 0 ? 'amber' : 'ink'}
+          accentBar={rows.length > 0 ? 'var(--amber)' : 'var(--line-strong)'}
+          value={String(rows.length)}
+          sub="codes to map"
+        />
+        <KPI
+          label="Accessorial"
+          value={String(accessorialCount)}
+          sub="unknown charge codes"
+        />
+        <KPI
+          label="Service level"
+          value={String(serviceLevelCount)}
+          sub="unknown service codes"
+        />
+        <KPI
+          label="Total occurrences"
+          value={String(totalOccurrences)}
+          sub="invoices affected"
+        />
+      </div>
+
+      {/* Queue */}
+      <div>
+        <SectionLabel right={
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+            map once — learned forever
+            {!clerkEnabled() && ' · AI suggestions off'}
+          </span>
+        }>Exceptions queue</SectionLabel>
+        <ExceptionsQueue rows={rows} accessorials={STANDARD_ACCESSORIALS} clerkEnabled={clerkEnabled()} />
+      </div>
     </div>
   );
 }

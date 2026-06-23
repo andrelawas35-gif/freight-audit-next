@@ -216,6 +216,11 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
         <Segmented value={sort} onChange={setSort} options={[
           { value: 'opened', label: 'Newest' }, { value: 'amount', label: '$ Amount' }, { value: 'silent', label: 'Silent' },
         ]} />
+        <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+          {filtered.length !== rows.length
+            ? `${filtered.length} of ${rows.length}`
+            : `${rows.length}`} disputes
+        </span>
       </div>
 
       {/* Active filter chips */}
@@ -484,7 +489,4 @@ function eventForStage(stage: string, date: string): TrailEvent {
 }
 
 
-function setNoteInput(arg0: string) {
-  throw new Error('Function not implemented.');
-}
 

@@ -34,20 +34,25 @@ export async function addRule(_prev: SaveResult, formData: FormData): Promise<Sa
   const serviceLevel = String(formData.get('serviceLevel') || '').trim() || null;
   const effectiveFrom = String(formData.get('effectiveFrom') || '').trim() || null;
   const effectiveTo = String(formData.get('effectiveTo') || '').trim() || null;
+  const clauseRef = String(formData.get('clauseRef') || '').trim() || null;
   const rawValue = String(formData.get('value') || '').trim();
 
   if (scope === 'carrier' && !carrierScac) return { ok: false, error: 'Carrier override needs a SCAC.' };
   if (scope === 'contract' && !clientId) return { ok: false, error: 'Contract needs a client.' };
-  if (meta.serviceScoped && !serviceLevel) return { ok: false, error: 'This rule needs a service level.' };
+  if (meta.serviceScoped && !serviceLevel) return { ok: false, error: `This rule needs a ${meta.serviceLabel || 'service level'}.` };
 
   let numValue: number | null = null;
   let boolValue: boolean | null = null;
+  let textValue: string | null = null;
   if (meta.type === 'num') {
     const n = parseFloat(rawValue);
     if (isNaN(n)) return { ok: false, error: 'Enter a numeric value.' };
     numValue = n;
-  } else {
+  } else if (meta.type === 'bool') {
     boolValue = rawValue === 'true';
+  } else {
+    if (!rawValue) return { ok: false, error: 'Enter a value.' };
+    textValue = rawValue;
   }
 
   try {
@@ -59,8 +64,10 @@ export async function addRule(_prev: SaveResult, formData: FormData): Promise<Sa
       ruleKey,
       numValue,
       boolValue,
+      textValue,
       effectiveFrom,
       effectiveTo,
+      clauseRef,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -76,7 +83,10 @@ export async function addRule(_prev: SaveResult, formData: FormData): Promise<Sa
 
 export async function editRule(
   id: string,
-  patch: { numValue?: number | null; boolValue?: boolean | null; effectiveFrom?: string | null; effectiveTo?: string | null }
+  patch: {
+    numValue?: number | null; boolValue?: boolean | null; textValue?: string | null;
+    effectiveFrom?: string | null; effectiveTo?: string | null; clauseRef?: string | null;
+  }
 ) {
   await requireStaff();
   await updateRulebookRow(id, patch);

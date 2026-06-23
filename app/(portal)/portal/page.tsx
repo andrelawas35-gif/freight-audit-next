@@ -11,6 +11,8 @@ import { fetchRecord, fetchRecords } from '@/lib/airtable';
 import { Dashboard } from '@/components/portal/dashboard';
 import type { Dispute, Invoice, Client, AuditResult } from '@/lib/types';
 
+type PortalDispute = Dispute & { 'Carrier (display)'?: string };
+
 export const dynamic = 'force-dynamic';
 
 // Friendly labels + hues for the rule/error breakdown
@@ -62,7 +64,7 @@ export default async function PortalDashboard() {
   }
 
   let client: Client | null = null;
-  let disputes: Dispute[] = [];
+  let disputes: PortalDispute[] = [];
   let invoices: Invoice[] = [];
   let audits: AuditResult[] = [];
 
@@ -73,7 +75,7 @@ export default async function PortalDashboard() {
         filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
         sort: [{ field: 'Opened date', direction: 'desc' }],
         maxRecords: 500,
-      }) as Promise<Dispute[]>,
+      }) as Promise<PortalDispute[]>,
       fetchRecords('Invoices', {
         filterByFormula: `FIND("${clientId}", ARRAYJOIN({Clients}))`,
         maxRecords: 1000,
@@ -144,6 +146,25 @@ export default async function PortalDashboard() {
     amount: d['Disputed amount'] || 0,
   }));
 
+  const carrierTotals = new Map<string, number>();
+  for (const dispute of disputes) {
+    const carrier = dispute['Carrier (display)'] || 'Other';
+    carrierTotals.set(carrier, (carrierTotals.get(carrier) || 0) + (dispute['Disputed amount'] || 0));
+  }
+  const totalCarrierAmount = [...carrierTotals.values()].reduce((sum, amount) => sum + amount, 0);
+  const topCarriers = [...carrierTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([carrier, amount]) => ({
+    carrier, amount, pct: totalCarrierAmount > 0 ? Math.round((amount / totalCarrierAmount) * 100) : 0,
+  }));
+
+  const activity = disputes.slice(0, 5).map((dispute) => ({
+    id: dispute.id,
+    text: dispute.Status === 'Won'
+      ? `${dispute['Dispute ID'] || 'Claim'} recovered ${Math.round(dispute['Recovery amount'] || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}`
+      : `${dispute['Dispute ID'] || 'Claim'} moved to ${dispute.Status || 'Open'}`,
+    date: shortDate(dispute['Date resolved'] || dispute['Carrier response date'] || dispute['Opened date']),
+    tone: dispute.Status === 'Won' ? 'green' : dispute.Status === 'Escalated' ? 'red' : 'neutral',
+  }));
+
   return (
     <Dashboard
       companyName={client?.['Company name'] || 'Your dashboard'}
@@ -157,6 +178,8 @@ export default async function PortalDashboard() {
       breakdown={breakdown}
       recentRecovered={recentRecovered}
       openDisputes={openDisputes}
+      topCarriers={topCarriers}
+      activity={activity}
     />
   );
 }

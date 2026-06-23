@@ -12,20 +12,10 @@
   buried in code.
 */
 
-import { neon, types } from '@neondatabase/serverless';
+import { getSql } from '@/lib/db';
 import { baselineAccessorial } from './accessorial-map';
 import { baselineServiceLevel } from './service-level-map';
-
-types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
-
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql() {
-  if (_sql) return _sql;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-  _sql = neon(url);
-  return _sql;
-}
+import { log } from '@/lib/logger';
 
 export type MappingType = 'accessorial' | 'service_level';
 
@@ -132,6 +122,7 @@ export async function persistExceptions(drafts: ExceptionDraft[]): Promise<numbe
   if (drafts.length === 0) return 0;
   const sql = getSql();
   let written = 0;
+  log.info('persisting mapping exceptions', { count: drafts.length });
   for (const d of drafts) {
     const existing = (await sql.query(
       `SELECT id FROM ingestion_exceptions
@@ -193,6 +184,14 @@ export async function resolveException(
   const rows = (await sql.query('SELECT * FROM ingestion_exceptions WHERE id = $1', [exceptionId])) as ExceptionRow[];
   const exc = rows[0];
   if (!exc) throw new Error('Exception not found');
+
+  log.info('resolving mapping exception', {
+    exceptionId,
+    mappingType: exc.mapping_type,
+    rawCode: exc.raw_code,
+    standardCode,
+    resolvedBy,
+  });
 
   // upsert the learned mapping
   const existing = (await sql.query(

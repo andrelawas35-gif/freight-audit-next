@@ -713,3 +713,93 @@ export function FilterPopover({ label, options, selected, onToggle }: {
 }
 export type{ Confidence };
 
+// ── Table footer with "Showing X of Y" ─────────────────────────
+export function TableFooter({ showing, total, label = 'rows' }: {
+  showing: number; total: number; label?: string;
+}) {
+  if (total === 0) return null;
+  const isSliced = showing < total;
+  return (
+    <div style={{
+      padding: '7px 14px',
+      borderTop: '1px solid var(--line)',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    }}>
+      <span className="mono" style={{
+        fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.03em',
+      }}>
+        {isSliced
+          ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
+          : `${total.toLocaleString()} ${label}`}
+      </span>
+    </div>
+  );
+}
+
+// ── Portal table footer (lighter style for portal) ──────────────
+export function PortalTableFooter({ showing, total, label = 'rows' }: {
+  showing: number; total: number; label?: string;
+}) {
+  if (total === 0) return null;
+  const isSliced = showing < total;
+  return (
+    <div style={{
+      padding: '9px 20px',
+      borderTop: '1px solid rgba(255,255,255,0.06)',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    }}>
+      <span style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, color: 'rgba(255,255,255,0.3)',
+        letterSpacing: '0.03em',
+      }}>
+        {isSliced
+          ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
+          : `${total.toLocaleString()} ${label}`}
+      </span>
+    </div>
+  );
+}
+
+// ── Console empty state (icon + heading + description) ──────────
+export function ConsoleEmptyState({ icon, heading, description }: {
+  icon: string; heading: string; description: string;
+}) {
+  return (
+    <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--ink-3)' }}>
+      <span style={{
+        display: 'inline-grid', placeItems: 'center',
+        width: 40, height: 40, borderRadius: 10,
+        background: 'var(--surface-sunk)', marginBottom: 10,
+      }}>
+        <Glyph name={icon} size={18} />
+      </span>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{heading}</div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, maxWidth: 340, margin: '0 auto' }}>{description}</div>
+    </div>
+  );
+}
+
+// ── Console error state ─────────────────────────────────────────
+export function ConsoleErrorState({ heading, message, hint }: {
+  heading?: string; message: string; hint?: string;
+}) {
+  return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-3)' }}>
+      <span style={{
+        display: 'inline-grid', placeItems: 'center',
+        width: 40, height: 40, borderRadius: 10,
+        background: 'oklch(0.22 0.06 25)', marginBottom: 10,
+      }}>
+        <Glyph name="alertTriangle" size={18} />
+      </span>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'oklch(0.84 0.10 25)' }}>
+        {heading || 'Something went wrong'}
+      </div>
+      <div className="mono" style={{ fontSize: 11, color: 'oklch(0.80 0.12 25)', marginBottom: hint ? 8 : 0 }}>
+        {message}
+      </div>
+      {hint && <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{hint}</div>}
+    </div>
+  );
+}
+

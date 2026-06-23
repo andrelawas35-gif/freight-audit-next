@@ -1,31 +1,10 @@
 'use client';
 
-/*
-  components/portal/dashboard.tsx — interactive client dashboard.
-
-  Built for non-technical clients: big plain-language numbers, charts, friendly
-  status tags, one-click CSV export, and a fully responsive layout that stacks
-  cleanly on mobile. Receives plain serializable data from the server page.
-*/
-
 import { useState } from 'react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   BarChart, Bar, Cell, CartesianGrid,
 } from 'recharts';
-import { StatusTag } from './status-tag';
-
-// ── theme colors (match globals.css) ─────────────────────────
-const C = {
-  green: 'oklch(0.74 0.15 152)',
-  greenInk: 'oklch(0.80 0.16 152)',
-  amber: 'oklch(0.78 0.15 70)',
-  amberInk: 'oklch(0.84 0.14 75)',
-  blue: 'oklch(0.70 0.14 244)',
-  blueInk: 'oklch(0.78 0.13 244)',
-  ink3: 'oklch(0.62 0.006 80)',
-  line: 'oklch(0.30 0.006 80)',
-};
 
 export type DashboardProps = {
   companyName: string;
@@ -39,114 +18,112 @@ export type DashboardProps = {
   breakdown: { label: string; amount: number; hue: number }[];
   recentRecovered: { id: string; date: string; amount: number }[];
   openDisputes: { id: string; status: string; amount: number }[];
+  topCarriers: { carrier: string; amount: number; pct: number }[];
+  activity: { id: string; text: string; date: string; tone: string }[];
 };
 
-const usd = (n: number) =>
-  '$' + Math.round(n).toLocaleString('en-US');
+const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
-function downloadCsv(filename: string, rows: (string | number)[][]) {
-  const csv = rows
-    .map((r) =>
-      r
-        .map((cell) => {
-          const s = String(cell ?? '');
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        })
-        .join(',')
-    )
-    .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const STATUS_PILL: Record<string, { label: string; bg: string; fg: string }> = {
+  Open:        { label: 'OPN', bg: 'rgba(94,106,210,0.12)', fg: '#818cf8' },
+  'In review': { label: 'REV', bg: 'rgba(94,106,210,0.12)', fg: '#818cf8' },
+  Submitted:   { label: 'SUB', bg: 'rgba(167,139,250,0.1)', fg: '#a78bfa' },
+  Escalated:   { label: 'ESC', bg: 'rgba(251,191,36,0.1)', fg: '#fbbf24' },
+  Won:         { label: 'WON', bg: 'rgba(74,222,128,0.1)', fg: '#4ade80' },
+  Closed:      { label: 'LST', bg: 'rgba(248,113,113,0.08)', fg: '#f87171' },
+};
 
-function scrollTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ── KPI card ──────────────────────────────────────────────────
-function Kpi({
-  label, value, sub, tone, onClick,
-}: {
-  label: string; value: string; sub?: string;
-  tone: 'green' | 'amber' | 'blue' | 'neutral';
-  onClick?: () => void;
-}) {
-  const [hover, setHover] = useState(false);
-  const color =
-    tone === 'green' ? C.greenInk :
-    tone === 'amber' ? C.amberInk :
-    tone === 'blue' ? C.blueInk : 'var(--ink)';
-  const glow =
-    tone === 'green' ? 'var(--green-soft)' :
-    tone === 'amber' ? 'var(--amber-soft)' :
-    tone === 'blue' ? 'var(--blue-soft)' : 'var(--line)';
+function Pill({ status }: { status: string }) {
+  const s = STATUS_PILL[status] || STATUS_PILL.Open;
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        textAlign: 'left',
-        cursor: onClick ? 'pointer' : 'default',
-        background: 'var(--surface)',
-        border: `1px solid ${hover ? glow : 'var(--line)'}`,
-        borderRadius: 'var(--radius-lg)',
-        padding: '15px 17px',
-        transition: 'transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease',
-        transform: hover && onClick ? 'translateY(-2px)' : 'none',
-        boxShadow: hover && onClick ? '0 8px 20px -8px rgba(0,0,0,0.5)' : 'none',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
+    <span style={{
+      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
+      letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 9999,
+      background: s.bg, color: s.fg,
+    }}>
+      {s.label}
+    </span>
+  );
+}
+
+function StatCard({ label, value, color, sub }: {
+  label: string; value: string; color: string; sub?: string;
+}) {
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.06)',
+      borderRadius: 12,
+      padding: '16px 20px',
+      transition: 'border-color 0.15s',
+    }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}
     >
-      <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: color, opacity: 0.85 }} />
-      <div style={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      <div style={{
+        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+        textTransform: 'uppercase', letterSpacing: '0.06em',
+        color: 'rgba(255,255,255,0.4)', marginBottom: 8,
+      }}>
         {label}
       </div>
-      <div style={{ fontSize: 27, fontWeight: 800, color, marginTop: 6, lineHeight: 1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>}
-    </button>
+      <div style={{
+        fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800,
+        color, letterSpacing: '-0.02em', lineHeight: 1.1,
+      }}>
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+          {sub}
+        </div>
+      )}
+    </div>
   );
 }
 
-function Card({ id, title, action, children }: {
-  id?: string; title: string; action?: React.ReactNode; children: React.ReactNode;
+function SectionCard({ title, children, style: s }: {
+  title?: string; children: React.ReactNode; style?: React.CSSProperties;
 }) {
   return (
-    <section id={id} style={{
-      background: 'var(--surface)', border: '1px solid var(--line)',
-      borderRadius: 'var(--radius-lg)', padding: 18, scrollMarginTop: 70,
+    <div style={{
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.06)',
+      borderRadius: 12,
+      padding: '16px 20px',
+      ...s,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
-        <h2 style={{ fontSize: 13.5, fontWeight: 700 }}>{title}</h2>
-        {action}
-      </div>
+      {title && (
+        <div style={{
+          fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '0.1em',
+          color: 'rgba(255,255,255,0.25)', marginBottom: 14,
+        }}>
+          {title}
+        </div>
+      )}
       {children}
-    </section>
+    </div>
   );
 }
 
-function ExportButton({ onClick }: { onClick: () => void }) {
+function HBar({ label, amount, maxAmount, color }: {
+  label: string; amount: number; maxAmount: number; color: string;
+}) {
+  const pct = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
   return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        background: 'var(--surface-sunk)', border: '1px solid var(--line)',
-        borderRadius: 'var(--radius-sm)', padding: '5px 10px',
-        fontSize: 11.5, fontWeight: 600, color: 'var(--ink-2)', cursor: 'pointer',
-      }}
-    >
-      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3v12M7 11l5 4 5-4M5 21h14" />
-      </svg>
-      Export CSV
-    </button>
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 12, color: '#EDEDEF' }}>{label}</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600, color }}>{usd(amount)}</span>
+      </div>
+      <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', background: color, borderRadius: 2,
+          transformOrigin: 'left', animation: 'portalBarGrow 0.7s ease-out both',
+        }} />
+      </div>
+    </div>
   );
 }
 
@@ -154,178 +131,163 @@ function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
-      background: 'var(--surface-2)', border: '1px solid var(--line-strong)',
+      background: 'rgba(20,20,24,0.95)', border: '1px solid rgba(255,255,255,0.1)',
       borderRadius: 6, padding: '7px 10px', fontSize: 12,
     }}>
-      <div style={{ color: 'var(--ink-3)', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{usd(payload[0].value)}</div>
+      <div style={{ color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontWeight: 700, color: '#EDEDEF' }}>{usd(payload[0].value)}</div>
     </div>
   );
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows
+    .map((r) => r.map((cell) => {
+      const s = String(cell ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function Dashboard(props: DashboardProps) {
   const {
     companyName, recovered, inDispute, activeCount, totalCount,
-    totalSpend, marginPct, monthly, breakdown, recentRecovered, openDisputes,
+    monthly, breakdown, recentRecovered, openDisputes, topCarriers, activity,
   } = props;
-
   const [chartMode, setChartMode] = useState<'cumulative' | 'monthly'>('cumulative');
+  const winRate = totalCount > 0
+    ? Math.round((recentRecovered.length / Math.max(1, recentRecovered.length + openDisputes.length)) * 100)
+    : 0;
   const hasMonthly = monthly.length > 0;
-  const hasBreakdown = breakdown.length > 0;
+  const maxBreakdown = breakdown.length > 0 ? breakdown[0].amount : 1;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>{companyName}</h1>
-        <p style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
+      <div style={{ marginBottom: 4 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: '#EDEDEF', margin: 0 }}>
+          {companyName}
+        </h1>
+        <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
           Freight overcharge recovery, working on your behalf.
         </p>
       </div>
 
-      {/* KPI row — responsive auto-fit, stacks on mobile */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <Kpi label="Recovered" value={usd(recovered)} sub="credited & pending" tone="green" onClick={() => scrollTo('recovery-trend')} />
-        <Kpi label="In dispute" value={usd(inDispute)} sub={`${activeCount} active claim${activeCount === 1 ? '' : 's'}`} tone="amber" onClick={() => scrollTo('open-claims')} />
-        <Kpi
-          label="Margin recovered"
-          value={totalSpend > 0 ? marginPct.toFixed(1) + '%' : '—'}
-          sub={totalSpend > 0 ? `of ${usd(totalSpend)} spend` : 'awaiting invoices'}
-          tone="blue"
-          onClick={() => scrollTo('breakdown')}
-        />
-        <Kpi label="Total claims" value={String(totalCount)} sub="lifetime" tone="neutral" />
+      {/* Stats row */}
+      <div className="portal-dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <StatCard label="Recovered" value={usd(recovered)} color="#4ade80" sub={`+${usd(monthly.length > 0 ? monthly[monthly.length - 1].recovered : 0)} this month`} />
+        <StatCard label="In dispute" value={usd(inDispute)} color="#f87171" sub={`${activeCount} active`} />
+        <StatCard label="Active" value={String(activeCount)} color="#EDEDEF" />
+        <StatCard label="Win rate" value={winRate > 0 ? `${winRate}%` : '—'} color="#4ade80" />
       </div>
 
-      {/* Recovery trend */}
-      <Card
-        id="recovery-trend"
-        title="Recovery over time"
-        action={
-          <div style={{ display: 'inline-flex', padding: 2, gap: 2, borderRadius: 7, background: 'var(--surface-sunk)', border: '1px solid var(--line)' }}>
-            {(['cumulative', 'monthly'] as const).map((m) => (
-              <button key={m} onClick={() => setChartMode(m)} style={{
-                padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 5, border: 'none', cursor: 'pointer',
-                textTransform: 'capitalize',
-                background: chartMode === m ? 'var(--surface)' : 'transparent',
-                color: chartMode === m ? 'var(--ink)' : 'var(--ink-3)',
-              }}>{m}</button>
-            ))}
-          </div>
-        }
-      >
-        {hasMonthly ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={monthly} margin={{ top: 6, right: 6, left: -10, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gRecover" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={C.green} stopOpacity={0.45} />
-                  <stop offset="100%" stopColor={C.green} stopOpacity={0.03} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={C.line} strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="month" stroke={C.ink3} tick={{ fontSize: 11, fill: C.ink3 }} tickLine={false} axisLine={false} />
-              <YAxis stroke={C.ink3} tick={{ fontSize: 11, fill: C.ink3 }} tickLine={false} axisLine={false}
-                tickFormatter={(v) => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)} width={44} />
-              <Tooltip content={<ChartTooltip />} />
-              <Area
-                type="monotone"
-                dataKey={chartMode === 'cumulative' ? 'cumulative' : 'recovered'}
-                stroke={C.green} strokeWidth={2.4} fill="url(#gRecover)" dot={{ r: 2.5, fill: C.green }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <Empty text="No recoveries to chart yet." />
-        )}
-      </Card>
+      {/* Surcharge breakdown + Recovery pipeline */}
+      <div className="portal-dashboard-primary" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12 }}>
+        <SectionCard title="Surcharge breakdown">
+          {breakdown.length > 0 ? breakdown.map((b) => (
+            <HBar key={b.label} label={b.label} amount={b.amount} maxAmount={maxBreakdown} color="#4ade80" />
+          )) : (
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>No flagged surcharges yet.</p>
+          )}
+        </SectionCard>
 
-      {/* Where the bleeding is — carrier/error breakdown */}
-      <Card id="breakdown" title="Where the bleeding is">
-        {hasBreakdown ? (
-          <ResponsiveContainer width="100%" height={Math.max(140, breakdown.length * 46)}>
-            <BarChart data={breakdown} layout="vertical" margin={{ top: 0, right: 18, left: 8, bottom: 0 }}>
-              <XAxis type="number" hide />
-              <YAxis type="category" dataKey="label" width={150}
-                tick={{ fontSize: 11.5, fill: 'var(--ink-2)' }} tickLine={false} axisLine={false} />
-              <Tooltip cursor={{ fill: 'var(--hover)' }} content={<ChartTooltip />} />
-              <Bar dataKey="amount" radius={[0, 5, 5, 0]} barSize={20}>
-                {breakdown.map((b, i) => (
-                  <Cell key={i} fill={`oklch(0.68 0.13 ${b.hue})`} />
+        <SectionCard title="Recovery pipeline">
+          {hasMonthly ? (
+            <div>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+                {(['cumulative', 'monthly'] as const).map((m) => (
+                  <button key={m} onClick={() => setChartMode(m)} style={{
+                    fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
+                    letterSpacing: '0.04em', padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                    background: chartMode === m ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    color: chartMode === m ? '#EDEDEF' : 'rgba(255,255,255,0.3)',
+                    transition: 'all 0.1s',
+                  }}>{m}</button>
                 ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <Empty text="No flagged charges yet — your engine hasn’t found issues for this account." />
-        )}
-      </Card>
+              </div>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={monthly} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gPortalRecover" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4ade80" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#4ade80" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" stroke="none" tick={{ fontSize: 9, fontFamily: 'var(--mono)', fill: 'rgba(255,255,255,0.3)' }} tickLine={false} />
+                  <YAxis stroke="none" tick={{ fontSize: 9, fontFamily: 'var(--mono)', fill: 'rgba(255,255,255,0.3)' }} tickLine={false}
+                    tickFormatter={(v) => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)} width={40} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area type="monotone" dataKey={chartMode === 'cumulative' ? 'cumulative' : 'recovered'}
+                    stroke="#4ade80" strokeWidth={2} fill="url(#gPortalRecover)" dot={{ r: 2, fill: '#4ade80' }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>No data yet.</p>
+          )}
+        </SectionCard>
+      </div>
 
-      {/* Two lists — responsive, stack on mobile */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 16 }}>
-        <Card
-          title="Recently recovered"
-          action={
-            recentRecovered.length > 0 ? (
-              <ExportButton onClick={() => downloadCsv('recovered.csv', [
-                ['Claim', 'Date', 'Recovered'],
-                ...recentRecovered.map((d) => [d.id, d.date, d.amount]),
-              ])} />
-            ) : null
-          }
-        >
-          {recentRecovered.length === 0 && <Empty text="No recoveries yet." />}
-          {recentRecovered.map((d) => (
-            <Row key={d.id} left={d.id} sub={d.date} right={usd(d.amount)} rightColor={C.greenInk} />
-          ))}
-        </Card>
+      <div className="portal-dashboard-secondary" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <SectionCard title="Top carriers">
+          {topCarriers.map((carrier) => <div className="portal-carrier-row" key={carrier.carrier}><div><strong>{carrier.carrier}</strong><span>{carrier.pct}%</span><b>{usd(carrier.amount)}</b></div><div><span style={{ width: `${carrier.pct}%` }} /></div></div>)}
+          {topCarriers.length === 0 ? <p className="portal-muted">No carrier activity yet.</p> : null}
+        </SectionCard>
+        <SectionCard title="Recent activity">
+          <div className="portal-activity-list">{activity.map((item, index) => <div className="portal-activity-item" key={item.id}><div><span className={item.tone} />{index < activity.length - 1 ? <i /> : null}</div><p><strong>{item.text}</strong><small>{item.date}</small></p></div>)}</div>
+          {activity.length === 0 ? <p className="portal-muted">No recent activity.</p> : null}
+        </SectionCard>
+      </div>
 
-        <Card
-          id="open-claims"
-          title="Working on your behalf"
-          action={
-            openDisputes.length > 0 ? (
-              <ExportButton onClick={() => downloadCsv('open-claims.csv', [
-                ['Claim', 'Status', 'Amount'],
-                ...openDisputes.map((d) => [d.id, d.status, d.amount]),
-              ])} />
-            ) : null
-          }
-        >
-          {openDisputes.length === 0 && <Empty text="No open claims." />}
-          {openDisputes.map((d) => (
-            <Row
-              key={d.id}
-              left={d.id}
-              tag={<StatusTag status={d.status} />}
-              right={usd(d.amount)}
-              rightColor={C.amberInk}
-            />
+      {/* Bottom tables */}
+      <div className="portal-dashboard-bottom" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <SectionCard title="Recently recovered">
+          {recentRecovered.length === 0 && (
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>No recoveries yet.</p>
+          )}
+          {recentRecovered.slice(0, 5).map((d) => (
+            <div key={d.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600, color: '#EDEDEF' }}>{d.id}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{d.date}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: '#4ade80' }}>{usd(d.amount)}</span>
+                <Pill status="Won" />
+              </div>
+            </div>
           ))}
-        </Card>
+        </SectionCard>
+
+        <SectionCard title="Active disputes">
+          {openDisputes.length === 0 && (
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0 }}>No open claims.</p>
+          )}
+          {openDisputes.slice(0, 5).map((d) => (
+            <div key={d.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600, color: '#EDEDEF' }}>{d.id}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: '#f87171' }}>{usd(d.amount)}</span>
+                <Pill status={d.status} />
+              </div>
+            </div>
+          ))}
+        </SectionCard>
       </div>
     </div>
   );
-}
-
-function Row({ left, sub, tag, right, rightColor }: {
-  left: string; sub?: string; tag?: React.ReactNode; right: string; rightColor: string;
-}) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 10, padding: '9px 0', borderTop: '1px solid var(--line-2)',
-    }}>
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{left}</span>
-        {sub && <span style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{sub}</span>}
-        {tag}
-      </div>
-      <span className="mono" style={{ fontSize: 13.5, fontWeight: 700, color: rightColor, whiteSpace: 'nowrap' }}>{right}</span>
-    </div>
-  );
-}
-
-function Empty({ text }: { text: string }) {
-  return <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: 0 }}>{text}</p>;
 }

@@ -5,17 +5,8 @@
   Passwords are bcrypt-hashed; we never store or return plaintext.
 */
 
-import { neon } from '@neondatabase/serverless';
 import bcrypt from 'bcryptjs';
-
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql() {
-  if (_sql) return _sql;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-  _sql = neon(url);
-  return _sql;
-}
+import { getSql } from '@/lib/db';
 
 export type AppUser = {
   id: string;

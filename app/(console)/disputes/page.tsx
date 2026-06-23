@@ -12,6 +12,8 @@
 */
 
 import { fetchRecords } from '@/lib/airtable';
+import { parserEnabled } from '@/lib/disputes/response-parser';
+import { ResponseParser } from '@/components/console/response-parser';
 import { DisputesView, type DisputeRow } from '@/components/disputes-view';
 import type { TrailEvent } from '@/components/ui/primitives';
 import { Card, KPI, SectionLabel, StatBar, Ticker, Bars } from '@/components/ui/primitives';
@@ -186,17 +188,10 @@ export default async function DisputesPage() {
       
     
 
-      <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
-        
-        <div>
-       
-          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>
-            Manage and track active recovery claims
-          </div>
-        </div>
+      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 1340, margin: '0 auto', width: '100%' }}>
 
        {/* KPI Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
           <KPI 
             label="Total Disputed" 
             tone="ink" 
@@ -211,12 +206,21 @@ export default async function DisputesPage() {
             value={fmtUSDsafe(Math.max(0, openExposure))} 
             sub="Awaiting resolution"
           />
-          <KPI 
-            label="Total Recovered" 
-            tone="green" 
+          <KPI
+            label="Total Recovered"
+            tone="green"
             accentBar="var(--green)"
-            value={fmtUSDsafe(totalRecovered)} 
+            value={fmtUSDsafe(totalRecovered)}
             sub="Successfully won"
+          />
+          <KPI
+            label="Win Rate"
+            tone="green"
+            accentBar="var(--green)"
+            value={statusCounts.won + statusCounts.closed > 0
+              ? `${Math.round((statusCounts.won / (statusCounts.won + statusCounts.closed)) * 100)}%`
+              : '—'}
+            sub={`${statusCounts.won} won · ${statusCounts.closed} closed`}
           />
         </div>
 
@@ -239,6 +243,14 @@ export default async function DisputesPage() {
             </div>
           )}
         </Card>
+
+        {/* Carrier Response Parser */}
+        <ResponseParser
+          parserEnabled={parserEnabled()}
+          disputes={rows
+            .filter((r) => !['Won', 'Closed'].includes(r.stage))
+            .map((r) => ({ id: r.id, displayId: r.displayId, carrier: r.carrier, amount: r.amount }))}
+        />
 
         {/* Your Existing Interactive Data Table */}
         <div>

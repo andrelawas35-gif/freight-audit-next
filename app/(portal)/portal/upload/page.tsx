@@ -28,9 +28,9 @@ export default async function UploadPage() {
   }
 
   return (
-    <div style={{ maxWidth: 720 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 800, marginBottom: 2 }}>Upload shipment data</h1>
-      <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>
+    <div className="portal-upload-page">
+      <h1>Upload shipment data</h1>
+      <p className="portal-page-subtitle">
         Upload a CSV export from your WMS or shipping platform. We match it against carrier
         invoices to find overcharges.
       </p>
@@ -38,9 +38,9 @@ export default async function UploadPage() {
       <UploadForm />
 
       {/* Upload history / audit trail */}
-      <section style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Upload history</h2>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+      <section className="portal-upload-section">
+        <h2>Upload history</h2>
+        <div className="portal-table-card portal-table-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -90,11 +90,11 @@ export default async function UploadPage() {
         </div>
       </section>
 
-      <section style={{ marginTop: 22 }}>
-        <h2 style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, color: 'var(--ink-2)' }}>
+      <section className="portal-accepted-columns">
+        <h2>
           Accepted columns
         </h2>
-        <p style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+        <p>
           Headers are matched flexibly (case-insensitive). Include at least a{' '}
           <strong>tracking number</strong> or <strong>PRO number</strong>. Other recognized
           columns: carrier, weight, length, width, height, origin zip, destination zip,

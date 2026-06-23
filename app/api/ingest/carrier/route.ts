@@ -9,34 +9,39 @@
 */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { normalizeFromFedexApi } from '@/lib/ingestion/carriers/fedex-api';
 import { normalizeFromUpsApi }   from '@/lib/ingestion/carriers/ups-api';
 import { stageInvoice }          from '@/lib/ingestion/normalize';
+import { withObservability }     from '@/lib/api-handler';
 
-export async function POST(req: NextRequest) {
+const bodySchema = z.object({
+  carrier: z.enum(['fedex', 'ups']),
+  invoice: z.record(z.string(), z.unknown()),
+});
+
+export const POST = withObservability('ingest/carrier', async (req, { log }) => {
   const secret = req.headers.get('x-ingest-secret');
   if (secret !== process.env.INGEST_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    const body = await req.json();
-    const { carrier, invoice } = body as { carrier: string; invoice: unknown };
-
-    let normalized;
-    if (carrier === 'fedex') {
-      normalized = normalizeFromFedexApi(invoice as any);
-    } else if (carrier === 'ups') {
-      normalized = normalizeFromUpsApi(invoice as any);
-    } else {
-      return NextResponse.json({ error: `Unknown carrier: ${carrier}` }, { status: 400 });
-    }
-
-    const invoiceId = await stageInvoice(normalized);
-    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[ingest/carrier]', message);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  const raw = await req.json();
+  const parsed = bodySchema.safeParse(raw);
+  if (!parsed.success) {
+    log.warn('invalid request body', { details: parsed.error.flatten() });
+    return NextResponse.json(
+      { ok: false, error: 'Invalid request body', details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
-}
+  const { carrier, invoice } = parsed.data;
+
+  const normalized = carrier === 'fedex'
+    ? normalizeFromFedexApi(invoice as any)
+    : normalizeFromUpsApi(invoice as any);
+
+  const invoiceId = await stageInvoice(normalized);
+  log.info('invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, carrier });
+  return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber });
+});

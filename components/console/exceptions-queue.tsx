@@ -21,13 +21,6 @@ export function ExceptionsQueue({ rows, accessorials, clerkEnabled }: {
 }) {
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)', fontSize: 12.5, fontWeight: 700 }}>
-        Exceptions queue
-        <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>
-          {' '}· {rows.length} open · map once, learned forever
-          {!clerkEnabled && ' · AI suggestions off (set ANTHROPIC_API_KEY)'}
-        </span>
-      </div>
       <table className="tbl">
         <thead>
           <tr>
@@ -44,6 +37,13 @@ export function ExceptionsQueue({ rows, accessorials, clerkEnabled }: {
           )}
         </tbody>
       </table>
+      {rows.length > 0 && (
+        <div style={{ padding: '7px 14px', borderTop: '1px solid var(--line)' }}>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.03em' }}>
+            {rows.length} open exception{rows.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

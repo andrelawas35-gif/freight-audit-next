@@ -10,39 +10,43 @@
   Protect with INGEST_SECRET env var (set same value in your EDI translator webhook config).
 */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { parseEdi210 } from '@/lib/ingestion/edi/parser';
 import { normalizeEdi210 } from '@/lib/ingestion/carriers/from-edi';
 import { stageInvoice } from '@/lib/ingestion/normalize';
 import { loadLearnedMappings, createMappingContext, persistExceptions } from '@/lib/ingestion/mappings';
 import { annotateOpenExceptions } from '@/lib/ingestion/data-clerk';
+import { withObservability } from '@/lib/api-handler';
 
-export async function POST(req: NextRequest) {
-  // Auth
+const bodySchema = z.object({
+  raw: z.string().min(1, 'Missing raw EDI body'),
+});
+
+export const POST = withObservability('ingest/edi', async (req, { log }) => {
   const secret = req.headers.get('x-ingest-secret');
   if (secret !== process.env.INGEST_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    const body = await req.json();
-    const rawEdi: string = body.raw;
-
-    if (!rawEdi) {
-      return NextResponse.json({ error: 'Missing raw EDI body' }, { status: 400 });
-    }
-
-    const ctx        = createMappingContext(await loadLearnedMappings(), 'edi');
-    const parsed     = parseEdi210(rawEdi);
-    const normalized = normalizeEdi210(parsed, ctx);
-    const invoiceId  = await stageInvoice(normalized);
-    const newExceptions = await persistExceptions(ctx.exceptions);
-    if (newExceptions > 0) await annotateOpenExceptions();
-
-    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[ingest/edi]', message);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  const body = await req.json();
+  const validated = bodySchema.safeParse(body);
+  if (!validated.success) {
+    log.warn('invalid EDI body', { issue: validated.error.issues[0]?.message });
+    return NextResponse.json(
+      { ok: false, error: validated.error.issues[0]?.message ?? 'Invalid request body' },
+      { status: 400 },
+    );
   }
-}
+  const rawEdi = validated.data.raw;
+
+  const ctx        = createMappingContext(await loadLearnedMappings(), 'edi');
+  const parsed     = parseEdi210(rawEdi);
+  const normalized = normalizeEdi210(parsed, ctx);
+  const invoiceId  = await stageInvoice(normalized);
+  const newExceptions = await persistExceptions(ctx.exceptions);
+  if (newExceptions > 0) await annotateOpenExceptions();
+
+  log.info('EDI invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
+  return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
+});

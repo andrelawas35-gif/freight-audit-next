@@ -5,99 +5,128 @@
   (via onClick handlers). Each one writes to Airtable and
   revalidates the queue page so the UI reflects the change
   without a manual refresh.
-
-  This is the "write" half of your app — the part that didn't
-  exist before. Reading was already covered by fetchRecords();
-  these are the first updateRecord/createRecord calls wired to UI.
 */
 
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { auth } from '@/auth';
 import { updateRecord, createRecord, fetchRecord } from '@/lib/airtable';
+import { withAction } from '@/lib/action-handler';
+
+async function requireStaff() {
+  const session = await auth();
+  if (session?.user?.role !== 'staff') throw new Error('Staff access required.');
+}
 
 // ── Change review status (New / Reviewing / Approved / Dismissed) ──
-export async function setReviewStatus(auditResultId: string, status: string) {
-  await updateRecord('Audit Results', auditResultId, {
-    'Review status': status,
-  });
-  revalidatePath('/queue');
-  return { ok: true };
-}
+export const setReviewStatus = withAction(
+  'queue.setReviewStatus',
+  async (log, auditResultId: string, status: string) => {
+    await requireStaff();
+    await updateRecord('Audit Results', auditResultId, { 'Review status': status });
+    log.info('review status changed', { auditResultId, status });
+    revalidatePath('/queue');
+    return { ok: true };
+  },
+);
 
 // ── Dismiss a finding ────────────────────────────────────────────
-export async function dismissFinding(auditResultId: string) {
-  await updateRecord('Audit Results', auditResultId, {
-    'Review status': 'Dismissed',
-  });
-  revalidatePath('/queue');
-  return { ok: true };
-}
+export const dismissFinding = withAction(
+  'queue.dismissFinding',
+  async (log, auditResultId: string) => {
+    await requireStaff();
+    await updateRecord('Audit Results', auditResultId, { 'Review status': 'Dismissed' });
+    log.info('finding dismissed', { auditResultId });
+    revalidatePath('/queue');
+    return { ok: true };
+  },
+);
 
 // ── File a dispute from an audit result ──────────────────────────
-// Creates a Disputes record linked back to the Audit Result + Invoice,
-// copies over Client/Carrier/Tracking for fast filtering, and marks
-// the audit result as Approved.
-export async function fileDispute(auditResultId: string, opts?: { resolutionNotes?: string }) {
-  const audit = await fetchRecord('Audit Results', auditResultId) as any;
+export const fileDispute = withAction(
+  'queue.fileDispute',
+  async (log, auditResultId: string, opts?: { resolutionNotes?: string }) => {
+    await requireStaff();
+    const audit = await fetchRecord('Audit Results', auditResultId) as any;
 
-  const invoiceLink = audit['Invoice'] as string[] | undefined;
-  const clientLink  = audit['Client'] as string[] | undefined;
-  const ruleLink    = audit['Audit Rules'] as string[] | undefined;
+    const invoiceLink = audit['Invoice'] as string[] | undefined;
+    const clientLink  = audit['Client'] as string[] | undefined;
+    const ruleLink    = audit['Audit Rules'] as string[] | undefined;
 
-  const dispute = await createRecord('Disputes', {
-    'Invoice':           invoiceLink || [],
-    'Audit result':      [auditResultId],
-    'Client':            clientLink || [],
-    'Audit rule':        ruleLink || [],
-    'Carrier (display)': audit['Carrier (display)'] || '',
-    'Tracking number':   audit['Tracking number'] || '',
-    'Disputed amount':   audit['Recoverable amount'] || audit['Variance'] || 0,
-    'Status':            'Open',
-    'Opened date':       new Date().toISOString().slice(0, 10),
-    'Resolution notes':  opts?.resolutionNotes || '',
-  });
+    const dispute = await createRecord('Disputes', {
+      'Invoice':           invoiceLink || [],
+      'Audit result':      [auditResultId],
+      'Client':            clientLink || [],
+      'Audit rule':        ruleLink || [],
+      'Carrier (display)': audit['Carrier (display)'] || '',
+      'Tracking number':   audit['Tracking number'] || '',
+      'Disputed amount':   audit['Recoverable amount'] || audit['Variance'] || 0,
+      'Status':            'Open',
+      'Opened date':       new Date().toISOString().slice(0, 10),
+      'Resolution notes':  opts?.resolutionNotes || '',
+    });
 
-  await updateRecord('Audit Results', auditResultId, {
-    'Review status': 'Approved',
-  });
+    await updateRecord('Audit Results', auditResultId, { 'Review status': 'Approved' });
 
-  revalidatePath('/queue');
-  revalidatePath('/disputes');
-  return { ok: true, disputeId: dispute.id };
-}
+    log.info('dispute filed', {
+      auditResultId,
+      disputeId: dispute.id,
+      amount: audit['Recoverable amount'] || audit['Variance'] || 0,
+    });
+
+    revalidatePath('/queue');
+    revalidatePath('/disputes');
+    return { ok: true, disputeId: dispute.id };
+  },
+);
 
 // ── Bulk file disputes (from multi-select bulk bar) ───────────────
-export async function fileDisputesBulk(auditResultIds: string[]) {
-  const results = [];
-  for (const id of auditResultIds) {
-    results.push(await fileDispute(id));
-  }
-  revalidatePath('/queue');
-  revalidatePath('/disputes');
-  return { ok: true, count: results.length };
-}
+export const fileDisputesBulk = withAction(
+  'queue.fileDisputesBulk',
+  async (log, auditResultIds: string[]) => {
+    await requireStaff();
+    const results = [];
+    for (const id of auditResultIds) {
+      results.push(await fileDispute(id));
+    }
+    log.info('bulk disputes filed', { count: results.length });
+    revalidatePath('/queue');
+    revalidatePath('/disputes');
+    return { ok: true, count: results.length };
+  },
+);
 
 // ── Bulk dismiss ───────────────────────────────────────────────────
-export async function dismissBulk(auditResultIds: string[]) {
-  for (let i = 0; i < auditResultIds.length; i += 10) {
-    const batch = auditResultIds.slice(i, i + 10);
-    await Promise.all(batch.map(id =>
-      updateRecord('Audit Results', id, { 'Review status': 'Dismissed' })
-    ));
-  }
-  revalidatePath('/queue');
-  return { ok: true };
-}
+export const dismissBulk = withAction(
+  'queue.dismissBulk',
+  async (log, auditResultIds: string[]) => {
+    await requireStaff();
+    for (let i = 0; i < auditResultIds.length; i += 10) {
+      const batch = auditResultIds.slice(i, i + 10);
+      await Promise.all(batch.map(id =>
+        updateRecord('Audit Results', id, { 'Review status': 'Dismissed' })
+      ));
+    }
+    log.info('bulk findings dismissed', { count: auditResultIds.length });
+    revalidatePath('/queue');
+    return { ok: true };
+  },
+);
 
 // ── Bulk mark approved (without filing — for "ready to file" staging) ──
-export async function approveBulk(auditResultIds: string[]) {
-  for (let i = 0; i < auditResultIds.length; i += 10) {
-    const batch = auditResultIds.slice(i, i + 10);
-    await Promise.all(batch.map(id =>
-      updateRecord('Audit Results', id, { 'Review status': 'Reviewing' })
-    ));
-  }
-  revalidatePath('/queue');
-  return { ok: true };
-}
+export const approveBulk = withAction(
+  'queue.approveBulk',
+  async (log, auditResultIds: string[]) => {
+    await requireStaff();
+    for (let i = 0; i < auditResultIds.length; i += 10) {
+      const batch = auditResultIds.slice(i, i + 10);
+      await Promise.all(batch.map(id =>
+        updateRecord('Audit Results', id, { 'Review status': 'Reviewing' })
+      ));
+    }
+    log.info('bulk findings approved', { count: auditResultIds.length });
+    revalidatePath('/queue');
+    return { ok: true };
+  },
+);

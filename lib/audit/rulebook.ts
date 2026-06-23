@@ -11,18 +11,7 @@
   in-memory resolver, so per-shipment lookups are synchronous and fast.
 */
 
-import { neon, types } from '@neondatabase/serverless';
-
-types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
-
-let _sql: ReturnType<typeof neon> | null = null;
-function getSql() {
-  if (_sql) return _sql;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-  _sql = neon(url);
-  return _sql;
-}
+import { getSql } from '@/lib/db';
 
 export type RulebookRow = {
   id: string;
@@ -36,6 +25,7 @@ export type RulebookRow = {
   text_value: string | null;
   effective_from: string | null;
   effective_to: string | null;
+  clause_ref: string | null;   // MSA / contract citation, e.g. "Exhibit A §2.1"
 };
 
 export type ResolveOpts = {
@@ -49,6 +39,8 @@ export type Resolver = {
   num: (key: string, opts: ResolveOpts, fallback: number) => number;
   bool: (key: string, opts: ResolveOpts, fallback: boolean) => boolean;
   text: (key: string, opts: ResolveOpts, fallback: string) => string;
+  // The MSA/contract citation of the resolved row (for dispute documentation).
+  clause: (key: string, opts: ResolveOpts) => string | null;
 };
 
 export async function loadRulebook(): Promise<RulebookRow[]> {
@@ -69,9 +61,11 @@ export type NewRulebookRow = {
   ruleKey: string;
   numValue?: number | null;
   boolValue?: boolean | null;
+  textValue?: string | null;
   effectiveFrom?: string | null;
   effectiveTo?: string | null;
   note?: string | null;
+  clauseRef?: string | null;
 };
 
 export async function createRulebookRow(r: NewRulebookRow): Promise<RulebookRow> {
@@ -79,8 +73,8 @@ export async function createRulebookRow(r: NewRulebookRow): Promise<RulebookRow>
   const rows = (await sql.query(
     `INSERT INTO rulebook
        (scope, client_id, carrier_scac, service_level, rule_key,
-        num_value, bool_value, effective_from, effective_to, note)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        num_value, bool_value, text_value, effective_from, effective_to, note, clause_ref)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING *`,
     [
       r.scope,
@@ -90,9 +84,11 @@ export async function createRulebookRow(r: NewRulebookRow): Promise<RulebookRow>
       r.ruleKey,
       r.numValue ?? null,
       r.boolValue ?? null,
+      r.textValue ?? null,
       r.effectiveFrom || null,
       r.effectiveTo || null,
       r.note ?? null,
+      r.clauseRef ?? null,
     ]
   )) as RulebookRow[];
   return rows[0];
@@ -100,14 +96,22 @@ export async function createRulebookRow(r: NewRulebookRow): Promise<RulebookRow>
 
 export async function updateRulebookRow(
   id: string,
-  patch: { numValue?: number | null; boolValue?: boolean | null; effectiveFrom?: string | null; effectiveTo?: string | null }
+  patch: {
+    numValue?: number | null; boolValue?: boolean | null; textValue?: string | null;
+    effectiveFrom?: string | null; effectiveTo?: string | null; clauseRef?: string | null;
+  }
 ): Promise<void> {
   const sql = getSql();
+  // clause_ref uses coalesce so passing null preserves the existing citation.
   await sql.query(
     `UPDATE rulebook
-        SET num_value = $2, bool_value = $3, effective_from = $4, effective_to = $5
+        SET num_value = $2, bool_value = $3, text_value = $4,
+            effective_from = $5, effective_to = $6, clause_ref = coalesce($7, clause_ref)
       WHERE id = $1`,
-    [id, patch.numValue ?? null, patch.boolValue ?? null, patch.effectiveFrom || null, patch.effectiveTo || null]
+    [
+      id, patch.numValue ?? null, patch.boolValue ?? null, patch.textValue ?? null,
+      patch.effectiveFrom || null, patch.effectiveTo || null, patch.clauseRef ?? null,
+    ]
   );
 }
 
@@ -172,6 +176,10 @@ export function createResolver(rows: RulebookRow[]): Resolver {
     text: (key, opts, fallback) => {
       const r = pick(key, opts);
       return r && r.text_value != null ? r.text_value : fallback;
+    },
+    clause: (key, opts) => {
+      const r = pick(key, opts);
+      return r?.clause_ref ?? null;
     },
   };
 }

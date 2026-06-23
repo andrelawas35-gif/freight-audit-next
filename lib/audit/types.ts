@@ -6,6 +6,7 @@
 */
 
 import type { Invoice, Shipment } from '@/lib/types';
+import type { GatewayTag } from '@/lib/intelligence/taxonomy';
 import type { Resolver } from './rulebook';
 
 export type RuleCode =
@@ -24,6 +25,7 @@ export type Finding = {
   notes: string;
   invoiceId: string;
   shipmentId?: string;
+  gateway?: GatewayTag;
 };
 
 // Context passed to every rule. `resolver` is the layered rulebook
