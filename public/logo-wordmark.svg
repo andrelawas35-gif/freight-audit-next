@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 32" fill="none">
+  <defs>
+    <linearGradient id="aw-face-l" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7B83E0"></stop>
+      <stop offset="100%" stop-color="#4A52B8"></stop>
+    </linearGradient>
+    <linearGradient id="aw-face-r" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5E6AD2"></stop>
+      <stop offset="100%" stop-color="#3D4599"></stop>
+    </linearGradient>
+    <linearGradient id="aw-face-c" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9BA1EC"></stop>
+      <stop offset="100%" stop-color="#6872D9"></stop>
+    </linearGradient>
+    <linearGradient id="aw-glow" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.9"></stop>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.4"></stop>
+    </linearGradient>
+  </defs>
+  <path d="M16 3 L4 26 L12 26 L16 17 Z" fill="url(#aw-face-l)"></path>
+  <path d="M16 3 L28 26 L20 26 L16 17 Z" fill="url(#aw-face-r)"></path>
+  <path d="M10.5 21 L16 10 L21.5 21 L18.5 21 L16 15.5 L13.5 21 Z" fill="url(#aw-face-c)" opacity="0.6"></path>
+  <path d="M16 2 L17.8 5.5 L16 9 L14.2 5.5 Z" fill="url(#aw-glow)"></path>
+</svg>

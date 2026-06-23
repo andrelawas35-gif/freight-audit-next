@@ -15,19 +15,25 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { Glyph } from '@/components/ui/primitives';
+import { CommandPalette } from './command-palette';
 
 const NAV = [
-  { href: '/',          label: 'Today',    glyph: 'home',  kbd: '1' },
-  { href: '/queue',     label: 'Queue',    glyph: 'flag',  kbd: '2' },
-  { href: '/disputes',  label: 'Disputes', glyph: 'gavel', kbd: '3' },
-  { href: '/carriers',  label: 'Carriers', glyph: 'truck', kbd: '4' },
-  { href: '/clients',   label: 'Clients',  glyph: 'users', kbd: '5' },
+  { href: '/',           label: 'Today',     glyph: 'home',      kbd: '1' },
+  { href: '/queue',      label: 'Queue',     glyph: 'flag',      kbd: '2' },
+  { href: '/disputes',   label: 'Disputes',  glyph: 'gavel',     kbd: '3' },
+  { href: '/carriers',   label: 'Carriers',  glyph: 'truck',     kbd: '4' },
+  { href: '/clients',    label: 'Clients',   glyph: 'users',     kbd: '5' },
+  { href: '/engine',     label: 'Engine',    glyph: 'grid',      kbd: '6' },
+  { href: '/ingestion',  label: 'Ingestion', glyph: 'arrowDown', kbd: '7' },
+  { href: '/users',      label: 'Users',     glyph: 'shield',    kbd: '8' },
+  { href: '/rulebook',   label: 'Rulebook',  glyph: 'book',      kbd: '9' },
 ];
 
 
-export function Sidebar() {
+export function Sidebar({ searchAudits, searchDisputes }: { searchAudits: any[]; searchDisputes: any[] }) {
   const pathname = usePathname();
   const [theme, setTheme] = useState('dark');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Theme toggle
   useEffect(() => {
@@ -64,9 +70,23 @@ export function Sidebar() {
           </svg>
         </div>
         <div style={{ lineHeight: 1.1 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Reclaim</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-0.005em' }}>Aurelian Collective</div>
           <div className="mono" style={{ fontSize: 8.5, color: 'var(--ink-faint)', letterSpacing: '0.08em' }}>FREIGHT AUDIT</div>
         </div>
+      </div>
+
+      {/* Search input */}
+      <div style={{ padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="text"
+          placeholder="Search..."
+          style={{
+            flex: 1, height: 28, borderRadius: 6, background: 'var(--surface-sunk)',
+            border: '1px solid var(--line)', display: 'flex', alignItems: 'center',
+            padding: '0 8px', gap: 8, cursor: 'pointer', color: 'var(--ink-faint)'
+          }}
+          onClick={() => setSearchOpen(true)}
+        />
       </div>
 
       {/* Nav links */}
@@ -93,7 +113,15 @@ export function Sidebar() {
           );
         })}
       </nav>
-
+      
+        {/* THE ACTUAL SEARCH MODAL */}
+      <CommandPalette 
+        open={searchOpen} 
+        onClose={() => setSearchOpen(false)} 
+        auditResults={searchAudits} 
+        disputes={searchDisputes} 
+      />
+     
       {/* Bottom section */}
       <div style={{ marginTop: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{

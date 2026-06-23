@@ -284,6 +284,7 @@ export function Checkbox({ checked, indeterminate, onChange, ariaLabel }: {
 
 // ── Button ───────────────────────────────────────────────────────
 type BtnVariant = 'default' | 'ghost' | 'green' | 'amber' | 'primary';
+
 type BtnSize = 'sm' | 'md';
 
 export function Btn({
@@ -345,6 +346,8 @@ export function Glyph({ name, size = 14 }: { name: string; size?: number }) {
     arrowDown:     'M12 5v14M19 12l-7 7-7-7',
     alertTriangle: 'M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z',
     info:          'M12 12m-10 0a10 10 0 1 0 20 0 10 10 0 1 0-20 0M12 16v-4M12 8h.01',
+    shield:        'M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z',
+    book:          'M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2zM18 20a2 2 0 0 0 2-2V6M9 8h6M9 12h6',
   };
   const d = paths[name];
   if (!d) return null;
@@ -708,3 +711,95 @@ export function FilterPopover({ label, options, selected, onToggle }: {
     </div>
   );
 }
+export type{ Confidence };
+
+// ── Table footer with "Showing X of Y" ─────────────────────────
+export function TableFooter({ showing, total, label = 'rows' }: {
+  showing: number; total: number; label?: string;
+}) {
+  if (total === 0) return null;
+  const isSliced = showing < total;
+  return (
+    <div style={{
+      padding: '7px 14px',
+      borderTop: '1px solid var(--line)',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    }}>
+      <span className="mono" style={{
+        fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.03em',
+      }}>
+        {isSliced
+          ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
+          : `${total.toLocaleString()} ${label}`}
+      </span>
+    </div>
+  );
+}
+
+// ── Portal table footer (lighter style for portal) ──────────────
+export function PortalTableFooter({ showing, total, label = 'rows' }: {
+  showing: number; total: number; label?: string;
+}) {
+  if (total === 0) return null;
+  const isSliced = showing < total;
+  return (
+    <div style={{
+      padding: '9px 20px',
+      borderTop: '1px solid rgba(255,255,255,0.06)',
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    }}>
+      <span style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, color: 'rgba(255,255,255,0.3)',
+        letterSpacing: '0.03em',
+      }}>
+        {isSliced
+          ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
+          : `${total.toLocaleString()} ${label}`}
+      </span>
+    </div>
+  );
+}
+
+// ── Console empty state (icon + heading + description) ──────────
+export function ConsoleEmptyState({ icon, heading, description }: {
+  icon: string; heading: string; description: string;
+}) {
+  return (
+    <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--ink-3)' }}>
+      <span style={{
+        display: 'inline-grid', placeItems: 'center',
+        width: 40, height: 40, borderRadius: 10,
+        background: 'var(--surface-sunk)', marginBottom: 10,
+      }}>
+        <Glyph name={icon} size={18} />
+      </span>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{heading}</div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, maxWidth: 340, margin: '0 auto' }}>{description}</div>
+    </div>
+  );
+}
+
+// ── Console error state ─────────────────────────────────────────
+export function ConsoleErrorState({ heading, message, hint }: {
+  heading?: string; message: string; hint?: string;
+}) {
+  return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--ink-3)' }}>
+      <span style={{
+        display: 'inline-grid', placeItems: 'center',
+        width: 40, height: 40, borderRadius: 10,
+        background: 'oklch(0.22 0.06 25)', marginBottom: 10,
+      }}>
+        <Glyph name="alertTriangle" size={18} />
+      </span>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'oklch(0.84 0.10 25)' }}>
+        {heading || 'Something went wrong'}
+      </div>
+      <div className="mono" style={{ fontSize: 11, color: 'oklch(0.80 0.12 25)', marginBottom: hint ? 8 : 0 }}>
+        {message}
+      </div>
+      {hint && <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{hint}</div>}
+    </div>
+  );
+}
+

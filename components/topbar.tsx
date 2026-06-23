@@ -7,18 +7,28 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
-  '/':          { title: 'Today',            sub: 'Action queue · what needs doing right now' },
-  '/queue':     { title: 'Audit Queue',      sub: 'Two-pane review · j/k to navigate' },
-  '/disputes':  { title: 'Disputes',         sub: 'Recovery pipeline across carriers' },
-  '/carriers':  { title: 'Carrier Scorecards', sub: 'Performance, error rates, response times' },
-  '/clients':   { title: 'Clients',          sub: 'Gain-share portfolio' },
+  '/':                      { title: 'Today',               sub: 'Action queue · what needs doing right now' },
+  '/queue':                 { title: 'Audit Queue',         sub: 'Two-pane review · j/k to navigate' },
+  '/disputes':              { title: 'Disputes',            sub: 'Recovery pipeline across carriers' },
+  '/carriers':              { title: 'Carrier Scorecards',  sub: 'Performance, error rates, response times' },
+  '/clients':               { title: 'Clients',             sub: 'Gain-share portfolio' },
+  '/engine':                { title: 'Audit Engine',        sub: 'Run rules · review history' },
+  '/ingestion':             { title: 'Ingestion',           sub: 'Invoice pipeline · match rate · coverage' },
+  '/ingestion/exceptions':  { title: 'Exceptions Queue',    sub: 'Map unknown codes · learned automatically' },
+  '/users':                 { title: 'Users',               sub: 'Staff accounts · client access' },
+  '/rulebook':              { title: 'Rulebook',            sub: 'Audit thresholds · contract → carrier → global' },
 };
 
 export function Topbar() {
+
   const pathname = usePathname();
   const meta = PAGE_META[pathname] || PAGE_META['/'];
+
+
 
   return (
     <header style={{
@@ -37,6 +47,9 @@ export function Topbar() {
           {meta.sub}
         </span>
       </div>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-faint)', letterSpacing: '0.04em' }}>
+        Console
+      </span>
     </header>
   );
 }

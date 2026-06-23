@@ -21,6 +21,12 @@ export type AuditResult = {
   'Audited at'?: string;
   'Detected by'?: string;
   'Disputes'?: string[];         // link to Disputes
+  'Gateway preventability'?: 'PREVENTABLE_BY_GATEWAY' | 'NON_PREVENTABLE_BY_GATEWAY' | 'UNKNOWN';
+  'Gateway category'?: string;
+  'Gateway rule suggestion'?: string;
+  'Gateway estimated savings'?: number;
+  'Gateway confidence'?: number;
+  'Gateway signal source'?: 'RULE_DEFAULT' | 'ANALYST_REVIEW' | 'AI_SUGGESTED';
 };
 
 export type Dispute = {

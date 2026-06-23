@@ -23,7 +23,7 @@ import {
   Btn, Glyph, Segmented, FilterChip, FilterPopover, AuditTrail,
   type TrailEvent,
 } from '@/components/ui/primitives';
-import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/disputes/actions';
+import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/(console)/disputes/actions';
 
 export type DisputeRow = {
   id: string;
@@ -144,6 +144,31 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
     startTransition(() => { markCarrierResponded(d.id); });
   };
 
+  // NEW: Handle Adding Notes optimistically
+  const handleAddNote = (d: DisputeRow, noteText: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    
+    setRows(prev => prev.map(r => {
+      if (r.id !== d.id) return r;
+      // Append to notes string and add to audit trail instantly
+      return { 
+        ...r, 
+        notes: r.notes ? `${r.notes}\n\n${noteText}` : noteText,
+        events: [...r.events, { kind: 'escalated', date: today, actor: 'Team', note: noteText }] // Using 'escalated' or similar generic kind for notes
+      };
+    }));
+    
+    if (sel?.id === d.id) {
+        setSel(prev => prev ? { 
+            ...prev, 
+            notes: prev.notes ? `${prev.notes}\n\n${noteText}` : noteText,
+            events: [...prev.events, { kind: 'escalated', date: today, actor: 'Team', note: noteText }]
+        } : prev);
+    }
+
+    startTransition(() => { addDisputeNote(d.id, noteText); });
+  };
+
   // ── filter helpers ──────────────────────────────────────────
   const toggleArr = (arr: string[], setter: (v: string[]) => void) => (v: string) =>
     setter(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
@@ -191,6 +216,11 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
         <Segmented value={sort} onChange={setSort} options={[
           { value: 'opened', label: 'Newest' }, { value: 'amount', label: '$ Amount' }, { value: 'silent', label: 'Silent' },
         ]} />
+        <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+          {filtered.length !== rows.length
+            ? `${filtered.length} of ${rows.length}`
+            : `${rows.length}`} disputes
+        </span>
       </div>
 
       {/* Active filter chips */}
@@ -248,9 +278,14 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
         </div>
 
         {/* DETAIL */}
-        <div style={{ overflow: 'hidden' }}>
-          <DisputeDetail d={sel} onAdvance={handleAdvance} onMarkResponded={handleMarkResponded} />
-        </div>
+          <div style={{ overflow: 'hidden' }}>
+            <DisputeDetail 
+              d={sel} 
+              onAdvance={handleAdvance} 
+              onMarkResponded={handleMarkResponded} 
+              onAddNote={handleAddNote} // <-- ADD THIS LINE
+            />
+          </div>
       </div>
 
       {isPending && (
@@ -293,11 +328,17 @@ function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean
 }
 
 // ── Detail pane ───────────────────────────────────────────────
-function DisputeDetail({ d, onAdvance, onMarkResponded }: {
+function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
   d: DisputeRow | null;
   onAdvance: (d: DisputeRow) => void;
   onMarkResponded: (d: DisputeRow) => void;
+  onAddNote: (d: DisputeRow, note: string) => void;
+
+  
 }) {
+
+  const [noteInput, setNoteInput] = useState('');
+
   if (!d) return (
     <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>
       <div style={{ textAlign: 'center' }}>
@@ -326,6 +367,12 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
     if (idx === -1 || idx >= STAGES.length - 1) return null;
     return STAGES[idx + 1];
   })();
+
+  const handleSubmitNote = () => {
+    if (!noteInput.trim()) return;
+    onAddNote(d, noteInput.trim());
+    setNoteInput('');
+  };
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -389,6 +436,27 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
         <AuditTrail events={d.events} />
       </div>
 
+      {/* NEW: Quick Note Input */}
+      {!['Won', 'Closed'].includes(d.stage) && (
+        <div style={{ marginTop: 24 }}>
+          <textarea 
+            placeholder="Add an internal note or carrier response update..."
+            value={noteInput}
+            onChange={(e) => setNoteInput(e.target.value)}
+            style={{
+              width: '100%', height: 60, padding: '8px 10px', fontSize: 12, resize: 'none',
+              background: 'var(--canvas)', border: '1px solid var(--line)', borderRadius: 6,
+              fontFamily: 'inherit', color: 'var(--ink)'
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+            <Btn size="sm" onClick={handleSubmitNote} disabled={!noteInput.trim()}>
+              Save Note
+            </Btn>
+          </div>
+        </div>
+      )}
+
       {!['Won', 'Closed'].includes(d.stage) && (
         <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', gap: 7 }}>
           {isSilent && (
@@ -419,3 +487,6 @@ function eventForStage(stage: string, date: string): TrailEvent {
     default:          return { kind: 'opened',    date, actor: 'Team', note: stage };
   }
 }
+
+
+

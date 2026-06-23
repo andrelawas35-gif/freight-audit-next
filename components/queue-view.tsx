@@ -23,14 +23,14 @@ import { useState, useEffect, useRef, useTransition } from 'react';
 import { fmtUSD, fmtDate, fmtDateFull, daysUntil } from '@/lib/format';
 import {
   RuleTag, ruleName, StatusEdit, DeadlineChip, CarrierMark, ConfMark,
-  Checkbox, Btn, Glyph, Segmented, FilterChip, FilterPopover,
+  Checkbox, Btn, Glyph, Segmented, FilterChip, FilterPopover, Card, KPI, Bars, SectionLabel, StatBar,
   type Confidence,
 } from '@/components/ui/primitives';
 import { templateFor } from '@/lib/templates';
 import {
   setReviewStatus, dismissFinding, fileDispute,
   fileDisputesBulk, dismissBulk, approveBulk,
-} from '@/app/queue/actions';
+} from '@/app/(console)/queue/actions';
 
 export type QueueRow = {
   id: string;
@@ -272,6 +272,11 @@ export function QueueView({ initialRows, loadError }: { initialRows: QueueRow[];
         {activeChips.length > 0 && (
           <button onClick={clearAll} style={{ fontSize: 11, color: 'var(--ink-3)', background: 'transparent', border: 'none', textDecoration: 'underline', textDecorationStyle: 'dotted', cursor: 'pointer' }}>Clear filters</button>
         )}
+        <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+          {filtered.length !== rows.length
+            ? `${filtered.length} of ${rows.length}`
+            : `${rows.length}`} findings
+        </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 7px', borderRadius: 5, background: 'var(--green-soft)', border: '1px solid var(--green-line)' }}>
           <span style={{ fontSize: 10, color: 'var(--green-ink)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Exposure</span>
           <span className="mono tnum" style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-ink)' }}>
