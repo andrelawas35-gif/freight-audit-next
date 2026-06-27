@@ -2,8 +2,9 @@
  * lib/gateway/precheck.ts — Gateway precheck logic.
  *
  * Core evaluation function called by the /v1/precheck API route.
- * Fetches active policy rules, builds a ShipmentPolicyContext from the
- * shipment record, evaluates, and logs per-decision rows to gateway_decisions.
+ * Fetches effective-dated policy rules (ADR 0016 D3), builds a
+ * ShipmentPolicyContext from the shipment record, evaluates, and
+ * synchronously logs per-decision rows to gateway_decisions (ADR 0016 D2).
  *
  * Follows ADR 0004 (gateway is a mode, not a service) and ADR 0003 D2
  * (one evaluator feeds both gateway and auditor).
@@ -19,6 +20,7 @@ import type {
 } from '@/lib/intelligence/policy-evaluator';
 import { GATEWAY_ACTIONS, type GatewayAction } from '@/lib/intelligence/taxonomy';
 import { getSql } from '@/lib/db';
+import type { PoolClient } from '@neondatabase/serverless';
 import { getCachedPrecheck, setCachedPrecheck } from './cache';
 import type { CachedPrecheckResult } from './cache';
 
@@ -26,6 +28,8 @@ export interface PrecheckInput {
   clientId: string;
   trackingNumber: string;
   carrierScac: string;
+  /** Tenant-restricted SQL connection for RLS-protected decision writes (ADR 0016 D2) */
+  tenantSql?: PoolClient;
 }
 
 export interface PrecheckResult {
@@ -95,7 +99,65 @@ async function fetchShipment(trackingNumber: string): Promise<Record<string, unk
   return (rows as Record<string, unknown>[])[0] ?? null;
 }
 
-async function fetchActiveRules(clientId: string): Promise<PolicyRuleForEvaluation[]> {
+// ── Effective-dated ruleset read (ADR 0016 D3) ───────────────────────
+//
+// Resolution order:
+//   1. Latest attested ruleset where attested_at <= NOW()
+//   2. Active (status = 'active') ruleset
+//   3. Empty ruleset → no rules, ALLOW everything (global default)
+
+interface ResolvedRuleset {
+  rulesetId: string;
+  version: string;
+  source: 'attested' | 'active';
+}
+
+async function resolveEffectiveRuleset(clientId: string): Promise<ResolvedRuleset | null> {
+  const sql = getSql();
+
+  // Strategy 1: latest attested ruleset
+  const attestedRows = await sql`
+    SELECT prs.id, prs.version, pa.attested_at
+    FROM policy_rulesets prs
+    JOIN policy_attestations pa ON pa.ruleset_id = prs.id AND pa.client_id = prs.client_id
+    WHERE prs.client_id = ${clientId}
+      AND prs.deleted_at IS NULL
+      AND pa.attested_at <= NOW()
+      AND (pa.valid_until IS NULL OR pa.valid_until > NOW())
+    ORDER BY pa.attested_at DESC
+    LIMIT 1
+  `;
+  const attested = (attestedRows as Record<string, unknown>[])[0];
+  if (attested) {
+    return {
+      rulesetId: String(attested.id),
+      version: String(attested.version),
+      source: 'attested',
+    };
+  }
+
+  // Strategy 2: active (status = 'active') ruleset
+  const activeRows = await sql`
+    SELECT id, version FROM policy_rulesets
+    WHERE client_id = ${clientId}
+      AND status = 'active'
+      AND deleted_at IS NULL
+    ORDER BY effective_from DESC NULLS LAST
+    LIMIT 1
+  `;
+  const active = (activeRows as Record<string, unknown>[])[0];
+  if (active) {
+    return {
+      rulesetId: String(active.id),
+      version: String(active.version),
+      source: 'active',
+    };
+  }
+
+  return null;
+}
+
+async function fetchRulesForRuleset(rulesetId: string): Promise<PolicyRuleForEvaluation[]> {
   const sql = getSql();
   const rows = await sql`
     SELECT
@@ -110,12 +172,9 @@ async function fetchActiveRules(clientId: string): Promise<PolicyRuleForEvaluati
       pr.status,
       pr.clause_ref
     FROM policy_rules pr
-    JOIN policy_rulesets prs ON prs.id = pr.ruleset_id
-    WHERE pr.client_id = ${clientId}
+    WHERE pr.ruleset_id = ${rulesetId}
       AND pr.status = 'active'
-      AND prs.status = 'active'
       AND pr.deleted_at IS NULL
-      AND prs.deleted_at IS NULL
     ORDER BY pr.rule_key
   `;
 
@@ -131,20 +190,6 @@ async function fetchActiveRules(clientId: string): Promise<PolicyRuleForEvaluati
     status: (String(row.status) as PolicyRuleForEvaluation['status']) ?? 'active',
     clauseRef: row.clause_ref ? String(row.clause_ref) : null,
   }));
-}
-
-async function fetchRulesetVersion(clientId: string): Promise<string | null> {
-  const sql = getSql();
-  const rows = await sql`
-    SELECT version FROM policy_rulesets
-    WHERE client_id = ${clientId}
-      AND status = 'active'
-      AND deleted_at IS NULL
-    ORDER BY effective_from DESC NULLS LAST
-    LIMIT 1
-  `;
-  const row = (rows as Record<string, unknown>[])[0];
-  return row ? String(row.version) : null;
 }
 
 function buildShipmentContext(
@@ -181,7 +226,7 @@ function parseNumeric(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-// ── Decision logging ──────────────────────────────────────────────────
+// ── Decision logging (ADR 0016 D2 — synchronous, in-txn) ────────────
 
 async function logDecisions(
   decisions: PolicyDecision[],
@@ -190,28 +235,46 @@ async function logDecisions(
   riskTier: string,
   rulesetVersion: string | null,
   context: ShipmentPolicyContext,
+  tenantSql?: PoolClient,
 ): Promise<void> {
-  const sql = getSql();
-
   for (const d of decisions) {
-    await sql`
-      INSERT INTO gateway_decisions
-        (id, client_id, correlation_id, request_json, decision,
-         enforced, violations, ruleset_version, degraded,
-         ruleset_snapshot_id, created_at)
-      VALUES
-        (${'gd' + crypto.randomUUID().replace(/-/g, '')},
-         ${clientId},
-         ${precheckId},
-         ${JSON.stringify(context)}::jsonb,
-         ${d.decision},
-         false,
-         ${JSON.stringify([d])}::jsonb,
-         ${rulesetVersion},
-         false,
-         ${null},
-         NOW())
-    `;
+    const id = 'gd' + crypto.randomUUID().replace(/-/g, '');
+    const requestJson = JSON.stringify(context);
+    const violationsJson = JSON.stringify([d]);
+
+    if (tenantSql) {
+      // Tenant-restricted PoolClient (RLS-protected) — use parameterized query()
+      await tenantSql.query(
+        `INSERT INTO gateway_decisions
+           (id, client_id, correlation_id, request_json, decision,
+            enforced, violations, ruleset_version, degraded,
+            ruleset_snapshot_id, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9, $10, NOW())`,
+        [id, clientId, precheckId, requestJson, d.decision,
+         false, violationsJson, rulesetVersion, false, null],
+      );
+    } else {
+      // HTTP driver (owner role, no RLS) — fallback for degraded path
+      const sql = getSql();
+      await sql`
+        INSERT INTO gateway_decisions
+          (id, client_id, correlation_id, request_json, decision,
+           enforced, violations, ruleset_version, degraded,
+           ruleset_snapshot_id, created_at)
+        VALUES
+          (${id},
+           ${clientId},
+           ${precheckId},
+           ${requestJson}::jsonb,
+           ${d.decision},
+           false,
+           ${violationsJson}::jsonb,
+           ${rulesetVersion},
+           false,
+           ${null},
+           NOW())
+      `;
+    }
   }
 }
 
@@ -227,31 +290,60 @@ export async function runPrecheck(input: PrecheckInput): Promise<PrecheckResult>
   const precheckId = 'pc_' + crypto.randomUUID().replace(/-/g, '');
 
   try {
-    // 1. Fetch shipment data and active rules
-    const [shipment, rules, rulesetVersion] = await Promise.all([
-      fetchShipment(input.trackingNumber),
-      fetchActiveRules(input.clientId),
-      fetchRulesetVersion(input.clientId),
-    ]);
+    // 1. Resolve effective-dated ruleset (ADR 0016 D3)
+    const resolvedRuleset = await resolveEffectiveRuleset(input.clientId);
 
-    // 2. Build policy context
+    // 2. Fetch shipment data and rules in parallel
+    const rules: PolicyRuleForEvaluation[] = resolvedRuleset
+      ? await fetchRulesForRuleset(resolvedRuleset.rulesetId)
+      : [];
+
+    const shipment = await fetchShipment(input.trackingNumber);
+
+    const rulesetVersion = resolvedRuleset?.version ?? null;
+    logInfo('ruleset resolved', {
+      clientId: input.clientId,
+      rulesetId: resolvedRuleset?.rulesetId ?? null,
+      rulesetVersion,
+      source: resolvedRuleset?.source ?? 'none',
+      ruleCount: rules.length,
+    });
+
+    // 3. Build policy context
     const context = buildShipmentContext(input.clientId, shipment, input);
 
-    // 3. Evaluate
+    // 4. Evaluate
     const decisions = evaluatePolicyContext({
       context,
       rules,
       mode: 'pre_shipment',
     });
 
-    // 4. Risk tier and overall action
+    // 5. Risk tier and overall action
     const risk_tier = computeRiskTier(decisions);
     const overall_action = aggregateAction(decisions);
 
-    // 5. Log decisions (fire-and-forget — don't block response)
-    logDecisions(decisions, input.clientId, precheckId, risk_tier, rulesetVersion, context).catch(
-      (err) => console.error('gateway decision logging failed', { precheckId, err: String(err) }),
-    );
+    // 6. Log decisions synchronously (ADR 0016 D2)
+    if (decisions.length > 0) {
+      try {
+        await logDecisions(
+          decisions,
+          input.clientId,
+          precheckId,
+          risk_tier,
+          rulesetVersion,
+          context,
+          input.tenantSql,
+        );
+      } catch (logErr) {
+        // Degrade gracefully — don't block the response on write failure
+        console.error('gateway decision logging failed (degraded)', {
+          precheckId,
+          clientId: input.clientId,
+          err: String(logErr),
+        });
+      }
+    }
 
     const result: PrecheckResult = {
       decisions,
@@ -289,4 +381,11 @@ export async function runPrecheck(input: PrecheckInput): Promise<PrecheckResult>
       error: 'Evaluator unavailable',
     };
   }
+}
+
+// ── Internal logging helper ───────────────────────────────────────────
+
+function logInfo(message: string, data: Record<string, unknown>): void {
+  // Structured via console for now; routes through withObservability logger
+  console.log(JSON.stringify({ event: 'precheck', message, ...data }));
 }
