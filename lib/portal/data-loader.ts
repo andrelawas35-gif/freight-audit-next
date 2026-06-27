@@ -8,6 +8,8 @@
 */
 
 import { fetchRecord, fetchRecords } from '@/lib/db/records';
+import type { SqlLike } from '@/lib/db/records';
+import { getTenantSql } from '@/lib/db';
 import {
   getInsuranceExposureReport,
   getGatewayReadinessReport,
@@ -86,25 +88,28 @@ function shortDate(iso?: string) {
 
 // ── Recovery data fetch ─────────────────────────────────────────
 
-async function fetchRecoveryData(clientId: string): Promise<{
+async function fetchRecoveryData(
+  clientId: string,
+  db?: SqlLike,
+): Promise<{
   companyName: string;
   data: RecoveryData;
 }> {
   const [client, disputes, invoices, audits] = await Promise.all([
-    fetchRecord('Clients', clientId) as Promise<Client>,
+    fetchRecord('Clients', clientId, db) as Promise<Client>,
     fetchRecords('Disputes', {
       filterByFormula: `{Client} = "${clientId}"`,
       sort: [{ field: 'Opened date', direction: 'desc' }],
       maxRecords: 500,
-    }) as Promise<PortalDispute[]>,
+    }, db) as Promise<PortalDispute[]>,
     fetchRecords('Invoices', {
       filterByFormula: `{Clients} = "${clientId}"`,
       maxRecords: 1000,
-    }) as Promise<Invoice[]>,
+    }, db) as Promise<Invoice[]>,
     fetchRecords('Audit Results', {
       filterByFormula: `{Client} = "${clientId}"`,
       maxRecords: 1000,
-    }) as Promise<AuditResult[]>,
+    }, db) as Promise<AuditResult[]>,
   ]);
 
   const isResolved = (s?: string) => s === 'Won' || s === 'Closed';
@@ -254,22 +259,30 @@ export async function getPortalDashboardData(
   };
   let companyName = 'Your dashboard';
 
-  const [recoveryResult, complianceResult] = await Promise.allSettled([
-    fetchRecoveryData(clientId),
-    fetchComplianceData(clientId),
-  ]);
+  // Acquire tenant-restricted connection for RLS-enforced reads (ADR 0013).
+  // The pooled checkout has app.current_tenant preset so RLS policies
+  // enforce client_id scoping at the database engine.
+  const db = await getTenantSql(clientId);
+  try {
+    const [recoveryResult, complianceResult] = await Promise.allSettled([
+      fetchRecoveryData(clientId, db),
+      fetchComplianceData(clientId),
+    ]);
 
-  if (recoveryResult.status === 'fulfilled') {
-    recovery = recoveryResult.value.data;
-    companyName = recoveryResult.value.companyName;
-  } else {
-    console.error('Recovery data fetch failed:', recoveryResult.reason);
-  }
+    if (recoveryResult.status === 'fulfilled') {
+      recovery = recoveryResult.value.data;
+      companyName = recoveryResult.value.companyName;
+    } else {
+      console.error('Recovery data fetch failed:', recoveryResult.reason);
+    }
 
-  if (complianceResult.status === 'fulfilled') {
-    compliance = complianceResult.value;
-  } else {
-    console.error('Compliance data fetch failed:', complianceResult.reason);
+    if (complianceResult.status === 'fulfilled') {
+      compliance = complianceResult.value;
+    } else {
+      console.error('Compliance data fetch failed:', complianceResult.reason);
+    }
+  } finally {
+    db.release();
   }
 
   return { companyName, recovery, compliance };

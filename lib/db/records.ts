@@ -9,9 +9,46 @@
   Usage in any page:
     import { fetchRecords } from '@/lib/db/records';
     const disputes = await fetchRecords('Disputes', { filterByFormula: `{Status} = 'Open'` });
+
+  Tenant-restricted reads (ADR 0013):
+    const db = await getTenantSql(clientId);
+    try {
+      const rows = await fetchRecords('Invoices', { filterByFormula: ... }, db);
+    } finally {
+      db.release();
+    }
 */
 
 import { getSql } from '@/lib/db';
+
+/** Shared query interface — works for both neon HTTP driver and PoolClient. */
+export type SqlLike = {
+  query: (text: string, params: unknown[]) => Promise<Record<string, unknown>[]>;
+};
+
+// ── Soft-delete gating ───────────────────────────────────────────
+// Only tables that actually have a `deleted_at` column get the
+// `deleted_at IS NULL` filter in SELECT queries.  This prevents
+// crashes on tables like `"Carrier Codes"` that lack the column.
+// Keep this set in sync with migrations that add deleted_at columns.
+export const SOFT_DELETE_TABLES: ReadonlySet<TableName> = new Set<TableName>([
+  'Invoices',
+  'Shipments',
+  'Audit Results',
+  'Disputes',
+  'Clients',
+  'Carriers',
+  'rulebook',
+  'client_policies',
+  'policy_documents',
+  'policy_rulesets',
+  'policy_rules',
+  'policy_scope_exclusions',
+  'policy_taxonomy_candidates',
+  'ingestion_exceptions',
+  'ingestion_batches',
+  'ingestion_records',
+]);
 
 // ── table name shortcuts ─────────────────────────────────────
 // These map 1:1 to Postgres table names (quoted, case-sensitive).
@@ -36,6 +73,8 @@ export type TableName =
   | 'gateway_behavioral_tags'
   | 'gateway_decisions'
   | 'client_insurance_policies'
+  | 'insurance_policy_rules'
+  | 'policy_scope_exclusions'
   | 'ingestion_exceptions'
   | 'ingestion_batches'
   | 'ingestion_records'
@@ -153,11 +192,13 @@ export function quoteIdent(name: string): string {
 
 // ── read records ─────────────────────────────────────────────
 // Returns a flat array of { id, ...fields } objects — same shape as before.
+// Optional `db` param for tenant-restricted reads (ADR 0013).
 export async function fetchRecords(
   tableName: TableName,
-  options: RecordQueryOptions = {}
+  options: RecordQueryOptions = {},
+  db?: SqlLike,
 ): Promise<Row[]> {
-  const sql = getSql();
+  const sql = db ?? getSql();
   const params: unknown[] = [];
 
   let query = `SELECT * FROM ${quoteIdent(tableName)}`;
@@ -167,8 +208,12 @@ export async function fetchRecords(
   if (hasFilter) {
     clauses.push(translateFormula(options.filterByFormula!, params));
   }
-  clauses.push(`${quoteIdent(tableName)}."deleted_at" IS NULL`);
-  query += ` WHERE ${clauses.join(' AND ')}`;
+  if (SOFT_DELETE_TABLES.has(tableName)) {
+    clauses.push(`${quoteIdent(tableName)}."deleted_at" IS NULL`);
+  }
+  if (clauses.length) {
+    query += ` WHERE ${clauses.join(' AND ')}`;
+  }
 
   if (options.sort && options.sort.length) {
     const orderBy = options.sort
@@ -193,9 +238,10 @@ export async function fetchAllRecords(
   options: Omit<RecordQueryOptions, 'maxRecords' | 'sort'> & {
     pageSize?: number;
     createdBefore?: string;
-  } = {}
+  } = {},
+  db?: SqlLike,
 ): Promise<Row[]> {
-  const sql = getSql();
+  const sql = db ?? getSql();
   const pageSize = positiveInteger(options.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize');
   const rows: Row[] = [];
   let afterId: string | null = null;
@@ -215,9 +261,11 @@ export async function fetchAllRecords(
       params.push(afterId);
       where.push(`id > $${params.length}`);
     }
+    if (SOFT_DELETE_TABLES.has(tableName)) {
+      where.push(`${quoteIdent(tableName)}."deleted_at" IS NULL`);
+    }
 
     let query = `SELECT * FROM ${quoteIdent(tableName)}`;
-    where.push(`${quoteIdent(tableName)}."deleted_at" IS NULL`);
     if (where.length) query += ` WHERE ${where.join(' AND ')}`;
     query += ' ORDER BY id ASC';
     params.push(pageSize);
@@ -237,17 +285,21 @@ export async function fetchAllRecords(
 export async function fetchRecordsByIds(
   tableName: TableName,
   recordIds: string[],
-  chunkSize = DEFAULT_PAGE_SIZE
+  chunkSize = DEFAULT_PAGE_SIZE,
+  db?: SqlLike,
 ): Promise<Row[]> {
-  const sql = getSql();
+  const sql = db ?? getSql();
   const size = positiveInteger(chunkSize, 'chunkSize');
   const uniqueIds = [...new Set(recordIds.filter(Boolean))];
   const rows: Row[] = [];
+  const softDeleteClause = SOFT_DELETE_TABLES.has(tableName)
+    ? ` AND ${quoteIdent(tableName)}."deleted_at" IS NULL`
+    : '';
 
   for (let i = 0; i < uniqueIds.length; i += size) {
     const chunk = uniqueIds.slice(i, i + size);
     const page = (await sql.query(
-      `SELECT * FROM ${quoteIdent(tableName)} WHERE id = ANY($1::text[]) ORDER BY id ASC`,
+      `SELECT * FROM ${quoteIdent(tableName)} WHERE id = ANY($1::text[])${softDeleteClause} ORDER BY id ASC`,
       [chunk]
     )) as Row[];
     rows.push(...page);
@@ -262,17 +314,21 @@ export async function fetchRecordsByLinkedIds(
   tableName: TableName,
   linkField: string,
   linkedIds: string[],
-  chunkSize = DEFAULT_PAGE_SIZE
+  chunkSize = DEFAULT_PAGE_SIZE,
+  db?: SqlLike,
 ): Promise<Row[]> {
-  const sql = getSql();
+  const sql = db ?? getSql();
   const size = positiveInteger(chunkSize, 'chunkSize');
   const uniqueIds = [...new Set(linkedIds.filter(Boolean))];
   const byId = new Map<string, Row>();
+  const softDeleteClause = SOFT_DELETE_TABLES.has(tableName)
+    ? ` AND ${quoteIdent(tableName)}."deleted_at" IS NULL`
+    : '';
 
   for (let i = 0; i < uniqueIds.length; i += size) {
     const chunk = uniqueIds.slice(i, i + size);
     const page = (await sql.query(
-      `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(linkField)} && $1::text[] ORDER BY id ASC`,
+      `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(linkField)} && $1::text[]${softDeleteClause} ORDER BY id ASC`,
       [chunk]
     )) as Row[];
     for (const row of page) byId.set(row.id, row);
@@ -282,10 +338,17 @@ export async function fetchRecordsByLinkedIds(
 }
 
 // ── read one record ──────────────────────────────────────────
-export async function fetchRecord(tableName: TableName, recordId: string): Promise<Row> {
-  const sql = getSql();
+export async function fetchRecord(
+  tableName: TableName,
+  recordId: string,
+  db?: SqlLike,
+): Promise<Row> {
+  const sql = db ?? getSql();
+  const softDeleteClause = SOFT_DELETE_TABLES.has(tableName)
+    ? ` AND ${quoteIdent(tableName)}."deleted_at" IS NULL`
+    : '';
   const rows = (await sql.query(
-    `SELECT * FROM ${quoteIdent(tableName)} WHERE id = $1 LIMIT 1`,
+    `SELECT * FROM ${quoteIdent(tableName)} WHERE id = $1${softDeleteClause} LIMIT 1`,
     [recordId]
   )) as Row[];
   if (!rows.length) throw new Error(`Record ${recordId} not found in ${tableName}`);
@@ -431,11 +494,15 @@ export async function findByField(
   tableName: TableName,
   field: string,
   value: string,
-  limit = 1
+  limit = 1,
+  db?: SqlLike,
 ): Promise<Row[]> {
-  const sql = getSql();
+  const sql = db ?? getSql();
+  const softDeleteClause = SOFT_DELETE_TABLES.has(tableName)
+    ? ` AND ${quoteIdent(tableName)}."deleted_at" IS NULL`
+    : '';
   const rows = (await sql.query(
-    `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(field)} = $1 AND ${quoteIdent(tableName)}."deleted_at" IS NULL LIMIT $2`,
+    `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(field)} = $1${softDeleteClause} LIMIT $2`,
     [value, limit]
   )) as Row[];
   return rows;

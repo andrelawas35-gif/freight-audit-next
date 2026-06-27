@@ -1,11 +1,11 @@
 # Data Protection & Tenant Isolation
 
-> **STATUS: PLANNING (2026-06-26).** This is a live design record being built via a
-> grilling session. Nothing here is implemented yet. Decisions marked **LOCKED** are
-> settled; **OPEN** branches are still being resolved. When a decision ships, move its
-> status note to `docs/CHANGELOG.md` and the open work to `docs/BACKLOG.md` /
-> `docs/LAUNCH-BLOCKERS.md` per the usual discipline — do not let this doc become a
-> duplicate status checklist.
+> **STATUS: IN PROGRESS (2026-06-27).** E1 shipped the migration toolchain + restricted
+> `app_tenant` role (migration 0006). E3 (Wave 2) extended grants and RLS policies to the
+> portal read-set (migration 0018), wired `getTenantSql` through `records.ts` and the
+> portal data-loader, added `SOFT_DELETE_TABLES` gating, and created the behavioral
+> isolation test. Decisions marked **LOCKED** are settled; **OPEN** branches are still
+> being resolved.
 
 ## What this is
 
@@ -210,6 +210,80 @@ Rollout order is designed so prod cannot silently break:
 Open follow-ups spun out of this design:
 - Verify/fix the separate-call `BEGIN/COMMIT` atomicity concern (Driver mechanics note).
 - `learned_mappings` Tier-0 scrub guard (no rates/amounts) — D3 rule 3.
+
+## RLS-protected tables (current state)
+
+### Phase-1 set (migration 0006 — FORCE ROW LEVEL SECURITY applied)
+
+| Table | Tenancy key | Policy |
+|-------|-------------|--------|
+| `"Invoices"` | `client_id` (scalar) | `tenant_isolation_invoices` |
+| `"Audit Results"` | `client_id` (scalar) | `tenant_isolation_audit_results` |
+| `"Disputes"` | `client_id` (scalar) | `tenant_isolation_disputes` |
+| `client_insurance_policies` | `client_id` | `tenant_isolation_client_insurance_policies` |
+| `insurance_policy_rules` | `client_id` | `tenant_isolation_insurance_policy_rules` |
+| `policy_rules` | `client_id` | `tenant_isolation_policy_rules` |
+| `policy_documents` | `client_id` | `tenant_isolation_policy_documents` |
+| `client_policies` | `client_id` | `tenant_isolation_client_policies` |
+| `gateway_decisions` | `client_id` | `tenant_isolation_gateway_decisions` |
+
+### Portal read-set (migration 0018 — ENABLE only, FORCE deferred)
+
+| Table | Tenancy key | Policy |
+|-------|-------------|--------|
+| `"Clients"` | `id` (own-row) | `tenant_isolation_clients` |
+| `policy_rulesets` | `client_id` | `tenant_isolation_policy_rulesets` |
+| `policy_scope_exclusions` | `client_id` | `tenant_isolation_policy_scope_exclusions` |
+| `policy_attestations` *(conditional)* | `client_id` | `tenant_isolation_policy_attestations` |
+
+All policies use `USING (client_id = current_setting('app.current_tenant', true))` — scalar `text` comparison, never `::uuid`.
+
+## `getTenantSql` usage pattern
+
+The portal data-loader in `lib/portal/data-loader.ts` demonstrates the canonical pattern:
+
+```typescript
+import { getTenantSql } from '@/lib/db';
+import { fetchRecords, fetchRecord } from '@/lib/db/records';
+
+const db = await getTenantSql(clientId);
+try {
+  const client = await fetchRecord('Clients', clientId, db);
+  const disputes = await fetchRecords('Disputes', { filterByFormula: ... }, db);
+} finally {
+  db.release();
+}
+```
+
+Key points:
+- Acquire one `getTenantSql(clientId)` per request, not per query.
+- Pass the `db` handle as the third argument to `records.ts` read helpers.
+- Always release in `finally` to avoid pool exhaustion.
+- Staff console / audit engine paths continue using `getSql()` (owner connection, RLS bypassed).
+
+## `SOFT_DELETE_TABLES` gating
+
+Defined in `lib/db/records.ts`. Read helpers (`fetchRecords`, `fetchAllRecords`, `fetchRecord`,
+`fetchRecordsByIds`, `fetchRecordsByLinkedIds`, `findByField`) only append
+`"deleted_at" IS NULL` to WHERE clauses when the table is in this set:
+
+```typescript
+export const SOFT_DELETE_TABLES: ReadonlySet<TableName> = new Set([
+  'Invoices', 'Shipments', 'Audit Results', 'Disputes',
+  'Clients', 'Carriers', 'rulebook', 'client_policies',
+  'policy_documents', 'policy_rulesets', 'policy_rules',
+  'policy_scope_exclusions', 'policy_taxonomy_candidates',
+  'ingestion_exceptions', 'ingestion_batches', 'ingestion_records',
+]);
+```
+
+Tables like `"Carrier Codes"`, `"Charge Types"`, `"DAS Zip Codes"`, `"Audit Rules"`,
+`"SLA Guarantees"`, `"Invoice Lines"`, `gateway_behavioral_tags`, `upload_log`,
+`sftp_processed_files`, `audit_jobs`, `policy_backtest_runs`, `policy_backtest_results`,
+`gateway_readiness_assessments`, and `audit_trail` do **not** have `deleted_at` columns
+and are excluded — queries against them no longer error with "column does not exist."
+
+When adding `deleted_at` to a new table, update `SOFT_DELETE_TABLES` in the same PR.
 
 ## Related docs
 
