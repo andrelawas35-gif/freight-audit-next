@@ -35,6 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           client_id: user.client_id,
+          is_taxonomy_admin: user.is_taxonomy_admin,
         };
       },
     }),

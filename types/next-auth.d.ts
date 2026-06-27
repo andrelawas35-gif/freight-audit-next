@@ -10,6 +10,7 @@ declare module 'next-auth' {
       id: string;
       role: string;
       clientId: string | null;
+      isTaxonomyAdmin: boolean;
     } & DefaultSession['user'];
   }
 }
@@ -19,5 +20,6 @@ declare module 'next-auth/jwt' {
     id: string;
     role: string;
     clientId: string | null;
+    isTaxonomyAdmin: boolean;
   }
 }

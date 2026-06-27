@@ -43,6 +43,7 @@ const atId   = sql`'at'  || replace(gen_random_uuid()::text, '-', '')`;
 const ibId   = sql`'ib'  || replace(gen_random_uuid()::text, '-', '')`;
 const irId   = sql`'ir'  || replace(gen_random_uuid()::text, '-', '')`;
 const pseId  = sql`'pse' || replace(gen_random_uuid()::text, '-', '')`;
+const txcId  = sql`'txc' || replace(gen_random_uuid()::text, '-', '')`;
 
 // ── Business tables (quoted names from Airtable legacy) ──────────
 
@@ -205,8 +206,9 @@ export const appUsers = pgTable('app_users', {
   passwordHash: text('password_hash').notNull(),
   name:         text('name'),
   role:         text('role').notNull().default('client'),
-  clientId:     text('client_id'),
-  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  clientId:         text('client_id'),
+  isTaxonomyAdmin:  boolean('is_taxonomy_admin').notNull().default(false),
+  createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('app_users_email_key').on(t.email),
   index('idx_app_users_email').on(t.email),
@@ -755,23 +757,34 @@ export const gatewayDecisions = pgTable('gateway_decisions', {
   index('idx_gateway_decisions_correlation').on(t.correlationId),
 ]);
 
-/** Tier-0: Taxonomy discovery candidates (07-schema-evolution.md). No client_id — structural metadata. */
+/** Tier-0: Taxonomy discovery candidates (Phase 4, ADR 0011 D5-D6 / 07-schema-evolution.md).
+ *  Records novel L3 policy variables detected by the extraction pipeline.
+ *  Tier-0 structural metadata only — no client values. Dedup by rule_key. */
 export const policyTaxonomyCandidates = pgTable('policy_taxonomy_candidates', {
   id:                 text('id').primaryKey().default(ptcId),
   ruleKey:            text('rule_key').notNull(),
-  inferredDatatype:   text('inferred_datatype'),
+  inferredType:       text('inferred_type').notNull().default('string'),
   inferredBounds:     jsonb('inferred_bounds'),
-  lineage:            jsonb('lineage'),
-  surfacingClientId:  text('surfacing_client_id'),
+  description:        text('description'),
+  sourceClause:       text('source_clause').notNull(),
+  documentId:         text('document_id'),
+  clauseRef:          text('clause_ref'),
+  surfacingClientId:  text('surfacing_client_id').notNull(),
   seenCount:          integer('seen_count').notNull().default(1),
-  lifecycleStatus:    text('lifecycle_status').notNull().default('candidate'),
-  notes:              text('notes'),
+  lifecycleStatus:    text('lifecycle_status').notNull().default('captured'),
+  promotedBy:         text('promoted_by'),
+  promotedAt:         timestamp('promoted_at', { withTimezone: true }),
+  rejectedBy:         text('rejected_by'),
+  rejectedAt:         timestamp('rejected_at', { withTimezone: true }),
+  rejectReason:       text('reject_reason'),
   createdAt:          timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:          timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  reviewedBy:         text('reviewed_by'),
-  reviewedAt:         timestamp('reviewed_at', { withTimezone: true }),
+  deletedAt:          timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
-  index('idx_taxonomy_candidates_status').on(t.lifecycleStatus, t.seenCount.desc()),
+  uniqueIndex('idx_taxonomy_candidates_rule_key').on(t.ruleKey).where(sql`${t.deletedAt} IS NULL`),
+  index('idx_taxonomy_candidates_seen_count').on(sql`${t.seenCount} DESC`).where(sql`${t.deletedAt} IS NULL`),
+  index('idx_taxonomy_candidates_status').on(t.lifecycleStatus).where(sql`${t.deletedAt} IS NULL`),
+  index('idx_taxonomy_candidates_client').on(t.surfacingClientId).where(sql`${t.deletedAt} IS NULL`),
 ]);
 
 /** T4 Client Ambiguity Dashboard — client decisions on unmappable clauses (ADR 0012 D5). */

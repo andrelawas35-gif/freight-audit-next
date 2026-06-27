@@ -88,6 +88,49 @@ ADR 0011 taxonomy discovery (Phase 4) and temperature gap (Phase 0) remain valid
   - Acceptance: coverage gap report shows exclusion reason instead of "System failed to detect"
 - [x] DeepSeek-V3 added to T2 escalation chain: GPT-4o-mini → DeepSeek-V3 → Claude Haiku → degraded (13x cheaper than Claude Sonnet on escalation tier, OpenAI-compatible API at `api.deepseek.com`)
 
+**Review Findings — 4-Tier Pipeline (code review 2026-06-26)**
+Ranked most-severe first. #1 is live now (shipped console panel); #2–#5 are latent until `classify()` is wired into a route/action.
+
+- [ ] **(live bug) T3→T1 feedback panel is permanently empty — queries a non-existent column.** `getHighMatchCandidates` filters `AND deleted_at IS NULL` ([`lib/intelligence/embeddings.ts:241`](../lib/intelligence/embeddings.ts)), but `clause_embeddings` (migration [`0012_phase2_extraction.sql:9`](../db/migrations/0012_phase2_extraction.sql)) has no `deleted_at` column. The query throws `column "deleted_at" does not exist`, the `catch` swallows it and returns `[]`, so the "Consider adding T1 pattern" panel ([`components/console/t3-feedback-panel.tsx`](../components/console/t3-feedback-panel.tsx)) shows nothing, always.
+  - Acceptance: drop the `deleted_at IS NULL` predicate (table is not soft-deleted) — or add the column if soft-delete is intended; the panel surfaces high-match clauses again.
+- [ ] **`match_count` is incremented on store, never on a vector hit — feedback frequency signal is wrong.** `match_count` only bumps in `storeClauseEmbedding`'s `ON CONFLICT` path (re-store of byte-identical `clause_text`); an actual T3 match in `classify()` ([`lib/intelligence/pipeline.ts:221`](../lib/intelligence/pipeline.ts)) `continue`s without incrementing. ADR 0012 D4 intends `match_count` to track hits, so `getHighMatchCandidates(minCount=10)` will essentially never fire even after fix #1.
+  - Acceptance: on a `findSimilarClauses` match, `UPDATE clause_embeddings SET match_count = match_count + 1, last_matched_at = NOW()` for the matched row.
+- [ ] **T3 stage runs embedding + DB calls strictly serially per clause.** The per-clause loop in `classify()` awaits `isClauseExcluded` (DB) → `generateEmbedding` (OpenAI) → `findSimilarClauses` (DB) one clause at a time ([`lib/intelligence/pipeline.ts:179-220`](../lib/intelligence/pipeline.ts)); only T2 gets `pLimit(5)`. A 100-clause policy = ~100 sequential embedding round-trips before T2 concurrency starts, defeating the ADR's "smart hard path" latency goal.
+  - Acceptance: batch embeddings via OpenAI's array `input`; collapse exclusion checks into one `WHERE clause_text = ANY($1)` query.
+- [ ] **T3 near-match (0.85–0.919) is emitted as a confirmed mapping using a different clause's condition.** A near-match sets `results[i].mapped = true` with the nearest neighbor's `conditionJson` ([`lib/intelligence/pipeline.ts:234-247`](../lib/intelligence/pipeline.ts)); if T2 then fails to map, the borrowed condition is kept in the `classified` array, indistinguishable from a real ≥0.92 hit. ADR 0012 D4 wants near-matches flagged for staff review, not auto-classified.
+  - Acceptance: keep near-matches as a distinct non-`mapped` status (the `T3_NEAR` type already exists in `embeddings.ts`) so they require staff confirmation.
+- [ ] **`ON CONFLICT` btree unique index can reject long clauses, silently disabling caching for them.** `uq_clause_embeddings_clause` is a plain btree `UNIQUE (clause_text, classified_rule_key)` ([`0012_phase2_extraction.sql:23`](../db/migrations/0012_phase2_extraction.sql)); a clause longer than the btree tuple limit (~2704 bytes) makes the `INSERT` throw, the `catch` warns non-fatally, and that clause never caches — paying full T2 cost forever.
+  - Acceptance: dedup on a hash — add `clause_hash` (e.g. `md5(clause_text)`) and move the unique index to `(clause_hash, classified_rule_key)`.
+- [ ] **(cleanup) Dead code: `cosineSimilarity` is never called.** Similarity is computed in SQL via pgvector `<=>` ([`lib/intelligence/embeddings.ts:124`](../lib/intelligence/embeddings.ts)); the JS `cosineSimilarity` helper ([`embeddings.ts:88`](../lib/intelligence/embeddings.ts)) has no callers. Remove it.
+
+**Review Findings — T4 Actions & Gateway Integration (code review 2026-06-26)**
+Integration review of today's shipped server actions against the live schema. #1 and #2 break shipped features.
+
+- [ ] **(live bug, CRITICAL) `defineClauseAction` always fails — inserts `ruleset_id = NULL` into a `NOT NULL` column.** The Define action ([`app/(portal)/portal/policy-review/actions.ts:104`](<../app/(portal)/portal/policy-review/actions.ts>)) inserts a draft `policy_rules` row with `ruleset_id = NULL`, but `policy_rules.ruleset_id` is `NOT NULL` ([`0005_policy_intelligence_mvp.sql:80`](../db/migrations/0005_policy_intelligence_mvp.sql)). Every client "Define" → NOT-NULL violation → `ROLLBACK` → "Failed to create rule." A `NULL`-ruleset rule would also never be selected by the evaluator/backtest (both join through `ruleset_id`).
+  - Acceptance: find-or-create a draft "Client-Defined" ruleset for the client and attach the rule to it; a Define action creates a `draft` rule that staff can later activate.
+- [ ] **(live bug) Gateway decision-log buffer wedges permanently after a partial drain.** `drainBuffer` retains entries on partial failure (correct) but the INSERT into `gateway_decisions` has no `ON CONFLICT` ([`services/gateway/src/decision-log.ts:68`](../services/gateway/src/decision-log.ts)). After one entry drains and a later one fails, the next drain replays the already-inserted entry → PK conflict on `id` ([`0006_keystone_contract.sql:14`](../db/migrations/0006_keystone_contract.sql)) → throws → buffer never truncates → all subsequent decisions are silently never persisted. The decision log is the insurance-evidence product.
+  - Acceptance: `INSERT … ON CONFLICT (id) DO NOTHING` so replay is idempotent; a poison/duplicate entry no longer wedges the drain.
+- [ ] **`excluded_by` stores the client org id, not the deciding user.** `excludeClauseAction` and `flagClauseAction` bind `excluded_by = $3` where `$3` is `clientId` ([`app/(portal)/portal/policy-review/actions.ts:156`](<../app/(portal)/portal/policy-review/actions.ts>)); the column is documented as "user ID who made the decision" ([`0013_policy_scope_exclusions.sql:21`](../db/migrations/0013_policy_scope_exclusions.sql)). These are binding governance/attestation records (ADR 0012 D5) — `session.user.id` is available but never read.
+  - Acceptance: capture and store `session.user.id` in `excluded_by`; `client_id` stays the tenant scope.
+- [ ] **T4 status taxonomy drift → decided clauses re-surface to the client.** `flagClauseAction` writes `status='staff_review'`, not in migration 0013's documented set (`pending_review | staff_approved | staff_rejected | excluded | defined`); and `storeUnmappedClause` dedups only against `status='pending_review'` ([`lib/intelligence/policy-service.ts:1291`](../lib/intelligence/policy-service.ts)), so a clause already Defined/Excluded/Flagged is re-inserted as a new `pending_review` row on the next pipeline run — the client is re-asked to decide a clause they already decided.
+  - Acceptance: dedup against any non-deleted `(client_id, clause_text)` row regardless of status; reconcile the status vocabulary with the migration and add a CHECK once settled.
+- [ ] **(verify, codebase-wide) `sql.query('BEGIN'/'COMMIT')` atomicity on the HTTP `neon()` driver.** `defineClauseAction` and many existing paths (`engine.ts`, `3pl-engine.ts`, `batchCreate`, `policy-service.ts`) issue `BEGIN`/`COMMIT` as separate `sql.query()` calls on the HTTP driver. If those run as independent requests, invariant #3 (transaction safety) is not actually enforced. Not introduced today, but it amplifies #1 (a failed Define could leave the exclusion `defined` with no rule).
+  - Acceptance: confirm `sql.query('BEGIN')` holds a single connection on the pinned `@neondatabase/serverless` version, or migrate financial write paths to `sql.transaction([...])` / `getTenantSql` pooled client.
+
+**Grilling Session — RLS + Client-Defined Rule Governance (ADR 0013–0015, 2026-06-26)**
+Implementation tasks from the grilling session that recorded these decisions. RLS enforcement (ADR 0013) is also tracked as a launch blocker in [`LAUNCH-BLOCKERS.md`](LAUNCH-BLOCKERS.md#tenant-isolation-row-level-security).
+
+- [ ] **Wire the client path through `getTenantSql` (ADR 0013).** Add an optional `db` param to the `records.ts` read helpers (default `getSql()`); portal data-loader acquires one `getTenantSql(session.user.clientId)` per request and releases it in `finally`. Staff console / audit engine / BI stay on owner `getSql()`.
+  - Acceptance: every portal read runs as `app_tenant` with `app.current_tenant` set; staff reads unaffected.
+- [ ] **Extend the restricted role to the portal read-set + `0014_rls_rollout.sql` (ADR 0013 D3/D5).** Grant SELECT + add RLS policies for `Clients` (own-row `id = app.current_tenant`), `policy_rulesets`, `policy_attestations`, `policy_scope_exclusions`. Ship grants + policies + FORCE-RLS (re-)assertion in a **new** forward migration applied **only after** the wiring is deployed — never edit applied migration 0006.
+  - Acceptance: portal reads of those tables succeed as `app_tenant`; FORCE RLS never engages before a client-path connection that sets `app.current_tenant` exists.
+- [ ] **Behavioral RLS isolation test, gated on `TEST_DATABASE_URL` (ADR 0013 D4).** Connect as `app_tenant`, assert 0 rows with no tenant set, seed tenant A/B, assert A cannot read B. Runs in CI (Neon branch), skips locally. Keep the parse-only test as a static lint. (Closes the re-opened launch-blocker isolation-test item.)
+  - Acceptance: the behavioral test runs against a migrated branch DB and fails the build if isolation breaks.
+- [ ] **`findOrCreateNextDraft(clientId)` + copy-forward; fix `defineClauseAction` (ADR 0014).** Client Define attaches the rule to a single designated per-client draft ruleset, copying forward the active ruleset's rules on creation. Replaces the current `ruleset_id = NULL` insert (which violates NOT NULL and always fails). The define action's scope-exclusion update + rule INSERT must commit atomically (see the `sql.query('BEGIN')` atomicity item above).
+  - Acceptance: a client Define creates a draft rule in the designated draft; activating that draft is additive (existing rules carried forward); the define action is atomic.
+- [ ] **Staff correctness gate for client-defined rules (ADR 0015).** Add `policy_rules.staff_reviewed boolean NOT NULL DEFAULT false`; a `CLIENT_DEFINED` rule is created unreviewed and excluded from the attestable/activatable set until staff clear it. Surface a "client-defined, pending review" staff queue.
+  - Acceptance: an unreviewed `CLIENT_DEFINED` rule never reaches `active`, even if its ruleset activates; staff review flips `staff_reviewed=true` and the rule becomes attestable.
+
 **Phase 4 — Taxonomy Discovery (ADR 0011 D5-D6, retained)**
 - [ ] Add `policy_taxonomy_candidates` table + migration.
   - Acceptance: stores `rule_key`, inferred datatype/bounds, lineage, surfacing `client_id`, `seen_count`, `lifecycle_status`; Tier-0 metadata only (no client values).
@@ -108,6 +151,8 @@ ADR 0011 taxonomy discovery (Phase 4) and temperature gap (Phase 0) remain valid
 - [x] Warm versioned snapshot cache with effective-dated ruleset selection + TTL/version invalidation.
   - Acceptance: zero per-request DB reads; an activated ruleset propagates within the TTL bound; decisions log `rulesetVersion`.
   - **DONE.** `services/gateway/src/cache.ts`.
+- [ ] **(review 2026-06-26) Cache picks the wrong "latest" ruleset — lexicographic compare on free-text version.** `warmCache` selects the latest ruleset per client via `existing.version >= rs.version` ([`services/gateway/src/cache.ts:128`](../services/gateway/src/cache.ts)), but `version` is arbitrary client-entered text ([`policies/actions.ts:51`](<../app/(console)/console/policies/actions.ts>), `z.string()`). String compare makes `"10" < "9"` and `"v2" > "v10"`, so past single-digit versions the Gateway evaluates prechecks against an older ruleset and logs the wrong `rulesetVersion` on the insurance-evidence decision.
+  - Acceptance: select the active ruleset by `effective_from DESC` (then `created_at DESC`), not version string; a client on version "10" is evaluated against "10", not "9".
 - [x] Response contract: always-200, `decision`/`enforced`/`approval_token`/`violations[]`/`rulesetVersion`/`correlationId`; per-client+per-rule mode (shadow/approval/block).
   - Acceptance: shadow returns real `decision` with `enforced:false` + token; enforce honors per-rule mode.
   - **DONE.** D3 contract implemented; D2 shadow mode (`enforced: false` always in V1).
@@ -218,6 +263,59 @@ The 4-tier architecture replaces the linear 6-stage pipeline.
   - **DONE 2026-06-26.** All 5 API routes (`carrier`, `edi`, `wms`, `3pl`, `sftp-poll`) and all console ingestion paths (file upload + manual paste for carrier_api, wms_webhook, edi_raw, ltl_csv, 3pl) create batches and record lineage rows. Errors are captured even on failure.
   - Acceptance: `/ingestion` can answer "what happened to this file/payload/row?"
 
+## Schema Architecture Review (2026-06-27)
+
+Database-wide gaps and overlaps found in a holistic review of 36 tables / 15 migrations. Detail in [`data-layer.md`](data-layer.md#known-schema-gaps--overlaps-review-2026-06-27).
+
+**Integrity gaps**
+
+- [ ] **🔴 G1 — Add foreign keys to intra-Postgres relationships.** Only one FK exists in the whole schema (`ingestion_records.batch_id`). No referential integrity on `policy_rules.ruleset_id`, `policy_rules.client_id`, `policy_backtest_results.backtest_run_id`/`rule_id`, `gateway_behavioral_tags.audit_result_id`, `policy_scope_exclusions.client_id`, etc. — orphans and typo'd references are accepted silently.
+  - Acceptance: snake_case policy/gateway/ingestion tables carry FKs with an explicit `ON DELETE` policy; business-table text[] links left as-is.
+- [ ] **🔴 G2 — `policy_attestations` is read but never created.** [`lib/portal/attestation.ts`](../lib/portal/attestation.ts) queries `FROM policy_attestations`; the table is in no migration and not in `schema.ts` → the portal Attestation panel errors. Resolve with O4.
+  - Acceptance: either create `policy_attestations` (timestamp + version + attested_by per ADR 0009) or derive attestation state from `policy_rulesets.status='client_attested'`; the panel loads.
+- [ ] **🟠 G3 — Resolve the dual source of truth (Drizzle journal frozen at 0001).** `db/migrations/meta/_journal.json` lists only 0000–0001 while 15 SQL files exist; `schema.ts` is hand-maintained with no parity check, and `drizzle-kit generate/migrate` is unusable. CLAUDE.md/data-layer.md still call schema.ts "authoritative."
+  - Acceptance: pick one canonical source — re-baseline Drizzle from the live DB, or demote schema.ts to a documented typed read-model with raw SQL canonical; update CLAUDE.md + data-layer.md to match.
+- [ ] **🟠 G4 — Extend RLS to client-confidential analytics tables.** No RLS on `policy_rulesets`, `policy_backtest_runs`/`results`, `gateway_readiness_assessments`, `gateway_behavioral_tags`, `shipment_insurance_audit_results`, `policy_scope_exclusions`, `Shipments`, `Clients`. (Portal read-set subset is covered by ADR 0013.)
+  - Acceptance: fold these into `0014_rls_rollout` with the right tenancy-key policy, or document each as staff/owner-only with a rationale.
+- [ ] **🟡 G5 — Add CHECK constraints / enums to status/type/source columns.** `policy_scope_exclusions.status`/`exclusion_type`, `signal_source`, gateway text columns lack constraints (already produced the `'staff_review'` drift). 
+  - Acceptance: undocumented status/type/source values are rejected by the DB.
+
+**Modeling overlaps**
+
+- [ ] **O1 — Converge `insurance_policy_rules` into `policy_rules`.** Near-identical shape; 06-schema.md calls `policy_rules` the long-term target and the other "read alongside." Two write paths + evaluators, ambiguous authority.
+  - Acceptance: insurance rules live in `policy_rules` (`category='insurance_*'`) under the ruleset/version/attestation lifecycle, or `insurance_policy_rules` is formally deprecated with a cutover plan.
+- [ ] **O2 — Make `client_insurance_policies` a 1:1 extension of `client_policies`.** Today they're parallel containers (`client_policies.policy_type='insurance_policy'` overlaps the structured insurance table).
+  - Acceptance: structured insurance terms hang off a `client_policies` row via FK `policy_id`; one policy identity.
+- [ ] **O3 — Declare authority for gateway tags (columns on `"Audit Results"` vs `gateway_behavioral_tags`).** Same payload stored denormalized + normalized with no source of truth → drift.
+  - Acceptance: the normalized table is authoritative and the columns are a transactionally-written cache (or the columns are dropped); documented.
+- [ ] **O4 — Single attestation authority.** `policy_rulesets.status='client_attested'` (exists) vs the missing `policy_attestations` table (G2) — pick one.
+- [ ] **O5 — Document backtest dollar duplication as a snapshot.** `policy_backtest_runs` and `gateway_readiness_assessments` both store `preventable_margin_loss`/`uninsured_exposure`; mark the assessment copy derived/snapshot, not independently authoritative.
+
+## Tech Stack Review (2026-06-27)
+
+Launch-readiness review of stack fluidity. The two launch-blocking items (migration toolchain, crons broken by the middleware bug) are in [`LAUNCH-BLOCKERS.md`](LAUNCH-BLOCKERS.md). Remaining gaps/overlaps:
+
+**Gaps**
+
+- [ ] **SG1 — Add CI.** No `.github/workflows`; the 295+ Vitest suite, `tsc --noEmit`, and the RLS parse test run only when a human remembers. Sentry config reads `process.env.CI` that nothing sets.
+  - Acceptance: CI runs `npm ci --legacy-peer-deps` → typecheck → test on every PR and blocks merge on failure.
+- [ ] **SG2 — Pin Next.js off canary.** `"next": "^15.6.0-canary.58"` is a pre-release base for production and the `^` range can float to newer canaries. Also drop `experimental.instrumentationHook` (stable/removed in current Next 15).
+  - Acceptance: Next pinned to a stable `15.x` (exact or `~`); build clean with no instrumentationHook warning.
+- [ ] **SG3 — Pin Node version.** Neither `package.json` has an `engines` field; Vercel/local can drift across Node majors.
+  - Acceptance: both manifests declare `engines.node`; CI + Vercel use it.
+- [ ] **SG4 — Give the Fastify gateway a deploy target (or document it as post-launch).** [`services/gateway`](../services/gateway) is a long-running Fastify server with in-memory cache, `setInterval` drain, and an append-only **file** buffer — none survive Vercel's serverless/ephemeral model, and there's no Dockerfile/fly/render artifact.
+  - Acceptance: a container + persistent host (Fly/Render/Railway) with the decision-log buffer moved off local disk, OR an explicit doc note that the gateway is not launch-scoped and not deployed.
+- [ ] **SG5 — Make the gateway a clean service.** It keeps its own `package-lock.json` yet imports the Next app's source via `../../../lib/db` / `../../../lib/intelligence/...`; a future `@/`-aliased import in `lib/intelligence` breaks its `tsx` build silently.
+  - Acceptance: promote to real workspaces (npm/pnpm) with a shared package, or vendor the evaluator so the gateway is standalone.
+
+**Overlaps**
+
+- [ ] **SO1 — 🟠 Reconcile the two gateways (and ADR 0004).** Precheck exists twice — [`app/api/v1/precheck/route.ts`](<../app/api/v1/precheck/route.ts>) (Next, via `lib/gateway/precheck.ts`) and [`services/gateway/src/precheck.ts`](../services/gateway/src/precheck.ts) (Fastify) — with duplicated logic and two auth models (single `GATEWAY_API_KEY` vs per-client `GATEWAY_API_KEY_<clientId>`). [ADR 0004](adr/0004-gateway-is-a-mode-not-a-service.md) decided the gateway is a Next.js route, *not* a service; E3 shipped the Fastify service against it.
+  - Acceptance: a decision (new/superseding ADR) — either Fastify is the gateway (give it SG4's deploy target, retire the Next route) or the Fastify service is retired and the Next route stands per ADR 0004; one auth model survives.
+- [ ] **SO2 — Unify the AI client.** `@anthropic-ai/sdk` is a dependency but `classifier.ts`/`embeddings.ts` call OpenAI, DeepSeek, and Anthropic via raw `fetch` — four external calls, four keys, ad-hoc timeout/error handling, no shared retry.
+  - Acceptance: a thin shared LLM client (timeout + retry + single key source); remove the unused SDK or use it consistently.
+- [ ] **SO3 — Stop calling Drizzle the migration mechanism until G3 is resolved.** Drizzle is schema-only (queries are raw SQL) and the kit migrate path is broken (= L1/G3). Update CLAUDE.md/data-layer.md once the source-of-truth decision lands.
+
 ## Launch Week
 
 ### Environment and Configuration
@@ -269,6 +367,10 @@ The 4-tier architecture replaces the linear 6-stage pipeline.
 - [x] Add `deleted_at` to business tables.
   - **DONE 2026-06-26.** Added to 11 tables (Invoices, Shipments, Audit Results, Disputes, Clients, Carriers, rulebook, client_policies, policy_documents, policy_rulesets, policy_rules). Migration `0008_soft_delete`. Partial indexes for active rows. `fetchRecords`, `fetchAllRecords`, `findByField` filter `WHERE deleted_at IS NULL`. New `softDelete()` and `restoreRecord()` functions in `lib/db/records.ts`.
   - Acceptance: standard reads exclude soft-deleted rows.
+- [ ] **(review 2026-06-26, live bug) Soft-delete filter crashes reads on tables without `deleted_at`.** `fetchRecords`/`fetchAllRecords` append `"<table>"."deleted_at" IS NULL` for **every** `TableName` ([`lib/db/records.ts:170`](../lib/db/records.ts), [`:220`](../lib/db/records.ts)), but migration `0008` only added the column to 11 of ~30 union members. Live: [`app/(console)/console/carriers/page.tsx:71`](<../app/(console)/console/carriers/page.tsx>) reads `'Carrier Codes'` (no `deleted_at`) → `column does not exist` → the carriers page falls into `ConsoleErrorState`. The other 16 columnless tables (`Invoice Lines`, `audit_jobs`, `gateway_decisions`, `ingestion_*`, `policy_backtest_*`, etc.) crash the same way when first read via these helpers.
+  - Acceptance: gate the predicate on a `SOFT_DELETE_TABLES: Set<TableName>` — only append `deleted_at IS NULL` for tables that have the column; `fetchRecords('Carrier Codes')` works again. (Same root cause as the `clause_embeddings.deleted_at` finding above.)
+- [ ] **(review 2026-06-26) Soft-delete bypassed by id/link reads.** `fetchRecord`, `fetchRecordsByIds`, and `fetchRecordsByLinkedIds` ([`lib/db/records.ts:237`](../lib/db/records.ts), [`:261`](../lib/db/records.ts), [`:285`](../lib/db/records.ts)) omit the `deleted_at` filter, so a soft-deleted row still surfaces when resolved by id or through a linked-record array (e.g. a tombstoned invoice still appears as a dispute's linked invoice).
+  - Acceptance: apply the same gated `deleted_at IS NULL` predicate to id/link resolvers for soft-deletable tables, or document that link resolution intentionally includes tombstoned rows.
 
 ### Audit Trail
 

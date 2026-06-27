@@ -124,7 +124,7 @@ One piece of source evidence: a PDF, tariff, rider, SOP, or email. Append-only. 
 **Canonical table**: `policy_documents`.
 
 ### Ruleset (not "Policy Ruleset")
-The version unit. A named, versioned collection of rules, `draft → active → archived`. Its `effective_from/to` is the sole authority on what rules were in force on a given date. Document and contract dates are descriptive metadata only.
+The version unit. A named, versioned collection of rules, `draft → active → archived`. Its `effective_from/to` is the sole authority on what rules were in force on a given date. Document and contract dates are descriptive metadata only. A new draft version is **additive** — it copies forward the prior active version's rules rather than replacing them — and the active version is immutable once attested; changes (including client-defined rules, ADR 0012 T4 / ADR 0014) enter the next draft, never the active ruleset.
 
 **Canonical table**: `policy_rulesets`.
 
@@ -156,7 +156,7 @@ The primary detailed view in the Compliance tab. A chronological list of specifi
 A secondary panel below the Coverage Gap Feed. A per-fulfillment-center compliance table: each warehouse is a column, each SOP is a row (packaging, signature, declared value, carrier selection, insurance class), cells show compliance % with color coding (green ≥95%, yellow ≥85%, red <85%) and 30-day trend arrows. Highlights the "Worst Offender" warehouse at the top. Answers "are my fulfillment centers following the rules?"
 
 ### Attestation
-The client's formal acknowledgment of their insurance requirements, carrier authorizations, and SOPs. An Attestation panel on the Compliance tab shows the client's current attested policies, a "Pending Attestations" count, and an attestation workflow where the client reviews extracted rules from uploaded policy documents, signs off, and the system records the attestation timestamp + version. Makes every future coverage gap a "you attested, then violated" event. Anchors governance accountability.
+The client's formal acknowledgment of their insurance requirements, carrier authorizations, and SOPs. An Attestation panel on the Compliance tab shows the client's current attested policies, a "Pending Attestations" count, and an attestation workflow where the client reviews extracted rules from uploaded policy documents, signs off, and the system records the attestation timestamp + version. Makes every future coverage gap a "you attested, then violated" event. Anchors governance accountability. Attestation proves *acknowledgment*, not correctness: a client-authored rule (ADR 0012 T4 / ADR 0014) is gated behind a staff correctness review (ADR 0015) before it is attestable — the client never enforces a rule on the strength of attesting their own definition.
 
 ### Gateway Readiness Summary (Client-Facing)
 A "What You Would Have Saved" panel on the Compliance tab. Shows total preventable exposure in dollars across the period, with a simulation toggle (Advisory / Require Approval / Block) to show how the numbers change under each gateway mode. Lists "Top N Rules to Activate" ranked by dollar impact. Proves gateway value without exposing raw taxonomy labels or self-serve configuration. Actual gateway activation remains staff-controlled until rulesets are validated with the first 3–5 clients.

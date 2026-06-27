@@ -11,7 +11,7 @@
 import { tokenize, tokenizeAll } from './tokenizer';
 import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
 import { classifyClause, type T2Result, type T2MappedResult } from './classifier';
-import { storeUnmappedClause } from './policy-service';
+import { storeUnmappedClause, upsertTaxonomyCandidate } from './policy-service';
 import type { PolicyCondition, PolicyAction } from './policy-evaluator';
 import type { TokenizerHit } from './tokenizer';
 import { getSql } from '@/lib/db';
@@ -327,6 +327,27 @@ export async function classify(
     }
   }
 
+  // ── Phase 4: Taxonomy discovery — L3 novel variable detection ────────
+  // Grounded + unmappable constraints become taxonomy candidates.
+  // All pipeline clauses are inherently grounded (extracted from real docs).
+  // Ungrounded novel = hallucination, never staged (not possible from pipeline).
+  if (options.clientId && options.policyId) {
+    const groundedUnmapped = results.filter(r => !r.mapped && r.clauseText);
+    for (const gu of groundedUnmapped) {
+      // Generate a stable rule_key candidate from the clause text.
+      // Identical clauses across clients naturally dedupe via upsertTaxonomyCandidate.
+      const candidateKey = `l3_${normalizeForKey(gu.clauseText)}`;
+      upsertTaxonomyCandidate({
+        ruleKey: candidateKey,
+        sourceClause: gu.clauseText,
+        surfacingClientId: options.clientId,
+        documentId: options.policyId,
+      }).catch(err => {
+        console.warn('[Pipeline] Phase 4 upsertTaxonomyCandidate failed (non-fatal):', err instanceof Error ? err.message : err);
+      });
+    }
+  }
+
   // Separate classified from unmapped
   const classified = results.filter(r => r.mapped);
   const unmapped = results.filter(r => !r.mapped);
@@ -373,6 +394,15 @@ async function storeT2Embedding(clauseText: string, t2Result: T2MappedResult): P
   } catch (err) {
     console.warn('[Pipeline] T2→T3 storage failed (non-fatal):', err instanceof Error ? err.message : err);
   }
+}
+
+/** Generate a stable, deduplicable key from clause text for L3 candidate discovery. */
+function normalizeForKey(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 48);
 }
 
 // ── T3 → T1 Feedback Loop ─────────────────────────────────────────

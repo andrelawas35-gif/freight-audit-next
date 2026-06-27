@@ -63,10 +63,12 @@ export const authConfig = {
           role?: string;
           client_id?: string | null;
           clientId?: string | null;
+          is_taxonomy_admin?: boolean;
         };
         token.id = u.id ?? token.id;
         token.role = u.role ?? 'client';
         token.clientId = u.client_id ?? u.clientId ?? null;
+        token.isTaxonomyAdmin = u.is_taxonomy_admin ?? false;
       }
       return token;
     },
@@ -75,6 +77,7 @@ export const authConfig = {
         session.user.id = token.id as string;
         session.user.role = (token.role as string) ?? 'client';
         session.user.clientId = (token.clientId as string | null) ?? null;
+        session.user.isTaxonomyAdmin = (token.isTaxonomyAdmin as boolean) ?? false;
       }
       return session;
     },

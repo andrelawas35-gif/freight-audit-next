@@ -1316,3 +1316,148 @@ export async function storeUnmappedClause(params: {
 
   return result[0]?.id as string ?? null;
 }
+
+// ── Phase 4: Taxonomy Discovery ─────────────────────────────────────
+
+export type TaxonomyCandidateRow = {
+  id: string;
+  ruleKey: string;
+  inferredType: string;
+  inferredBounds: Record<string, unknown> | null;
+  description: string | null;
+  sourceClause: string;
+  documentId: string | null;
+  clauseRef: string | null;
+  surfacingClientId: string;
+  seenCount: number;
+  lifecycleStatus: string;
+  promotedBy: string | null;
+  promotedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * Upsert a taxonomy candidate. Dedup by rule_key — bumps seen_count on conflict.
+ * Tier-0 structural metadata only; no client values stored.
+ */
+export async function upsertTaxonomyCandidate(params: {
+  ruleKey: string;
+  inferredType?: string;
+  inferredBounds?: Record<string, unknown>;
+  sourceClause: string;
+  documentId?: string;
+  clauseRef?: string;
+  surfacingClientId: string;
+}): Promise<string | null> {
+  const sql = await getSql();
+
+  // Check existing by rule_key (soft-delete aware)
+  const existing = await sql.query(`
+    SELECT id, seen_count, surfacing_client_id FROM policy_taxonomy_candidates
+    WHERE rule_key = $1 AND deleted_at IS NULL
+    LIMIT 1
+  `, [params.ruleKey]) as Record<string, unknown>[];
+
+  if (existing.length > 0) {
+    // Bump seen_count and update
+    const newCount = (Number(existing[0].seen_count) || 1) + 1;
+    await sql.query(`
+      UPDATE policy_taxonomy_candidates
+      SET seen_count = $2, updated_at = NOW()
+      WHERE id = $1
+    `, [existing[0].id, newCount]);
+    return existing[0].id as string;
+  }
+
+  // Insert new candidate
+  const result = await sql.query(`
+    INSERT INTO policy_taxonomy_candidates (
+      id, rule_key, inferred_type, inferred_bounds,
+      source_clause, document_id, clause_ref,
+      surfacing_client_id, seen_count, lifecycle_status
+    ) VALUES (
+      'ptc' || replace(gen_random_uuid()::text, '-', ''),
+      $1, $2, $3::jsonb,
+      $4, $5, $6,
+      $7, 1, 'captured'
+    )
+    RETURNING id
+  `, [
+    params.ruleKey,
+    params.inferredType || 'string',
+    params.inferredBounds ? JSON.stringify(params.inferredBounds) : null,
+    params.sourceClause,
+    params.documentId || null,
+    params.clauseRef || null,
+    params.surfacingClientId,
+  ]) as Record<string, unknown>[];
+
+  return result[0]?.id as string ?? null;
+}
+
+/**
+ * Get all taxonomy candidates for staff review, ranked by seen_count DESC.
+ */
+export async function getTaxonomyCandidates(filters?: {
+  lifecycleStatus?: string;
+  surfacingClientId?: string;
+  limit?: number;
+}): Promise<TaxonomyCandidateRow[]> {
+  const sql = await getSql();
+  const conditions: string[] = ['deleted_at IS NULL'];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (filters?.lifecycleStatus) {
+    conditions.push(`lifecycle_status = $${paramIdx++}`);
+    params.push(filters.lifecycleStatus);
+  }
+  if (filters?.surfacingClientId) {
+    conditions.push(`surfacing_client_id = $${paramIdx++}`);
+    params.push(filters.surfacingClientId);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limit = filters?.limit ?? 100;
+
+  const rows = await sql.query(`
+    SELECT
+      id, rule_key AS "ruleKey", inferred_type AS "inferredType",
+      inferred_bounds AS "inferredBounds", description,
+      source_clause AS "sourceClause", document_id AS "documentId",
+      clause_ref AS "clauseRef", surfacing_client_id AS "surfacingClientId",
+      seen_count::int AS "seenCount", lifecycle_status AS "lifecycleStatus",
+      promoted_by AS "promotedBy", promoted_at AS "promotedAt",
+      rejected_by AS "rejectedBy", rejected_at AS "rejectedAt",
+      reject_reason AS "rejectReason",
+      created_at AS "createdAt", updated_at AS "updatedAt"
+    FROM policy_taxonomy_candidates
+    ${where}
+    ORDER BY seen_count DESC
+    LIMIT $${paramIdx}
+  `, [...params, limit]) as unknown as TaxonomyCandidateRow[];
+
+  return rows;
+}
+
+/**
+ * Get the set of known rule_keys from active taxonomy (candidates that reached extractable+).
+ * Used by the pipeline to decide if a clause maps to a known key or is L3 novel.
+ */
+export async function getKnownRuleKeys(): Promise<Set<string>> {
+  const sql = await getSql();
+  const rows = await sql.query(`
+    SELECT rule_key FROM policy_taxonomy_candidates
+    WHERE lifecycle_status IN ('extractable', 'enforceable')
+      AND deleted_at IS NULL
+    UNION
+    SELECT rule_key FROM policy_rules
+    WHERE deleted_at IS NULL
+  `) as { rule_key: string }[];
+
+  return new Set(rows.map(r => r.rule_key));
+}

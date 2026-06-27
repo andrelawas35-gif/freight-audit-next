@@ -14,6 +14,7 @@ export type AppUser = {
   name: string | null;
   role: string;          // 'client' | 'staff'
   client_id: string | null;
+  is_taxonomy_admin: boolean;
 };
 
 type UserRow = AppUser & { password_hash: string };
@@ -22,7 +23,7 @@ type UserRow = AppUser & { password_hash: string };
 export async function getUserByEmail(email: string): Promise<UserRow | null> {
   const sql = getSql();
   const rows = (await sql.query(
-    'SELECT id, email, name, role, client_id, password_hash FROM app_users WHERE lower(email) = lower($1) LIMIT 1',
+    'SELECT id, email, name, role, client_id, is_taxonomy_admin, password_hash FROM app_users WHERE lower(email) = lower($1) LIMIT 1',
     [email]
   )) as UserRow[];
   return rows[0] ?? null;
