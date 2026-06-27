@@ -5,7 +5,9 @@
  * Strict schema alignment — LLM can only output existing PolicyCondition keys.
  * If no key fits → { mapped: false } → routes to T4 client ambiguity dashboard.
  *
- * Model chain: GPT-4o-mini → Claude Sonnet escalate → Claude Haiku fallback
+ * Model chain: GPT-4o-mini → DeepSeek-V3 escalate → Claude Haiku fallback
+ * DeepSeek replaces Claude Sonnet as escalation tier — 13x cheaper ($1.10 vs $15/1M output),
+ * OpenAI-compatible API, handles structured JSON extraction competently.
  * Degrades silently when no API key configured → { mapped: false } for all clauses.
  */
 
@@ -134,6 +136,38 @@ If mapped: { "mapped": true, "ruleKey": "category_key", "conditionJson": { ... }
 If unmapped: { "mapped": false, "reason": "..." }`;
 }
 
+// ── DeepSeek (OpenAI-compatible) ───────────────────────────────────
+
+async function callDeepSeek(prompt: string): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY not configured');
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: 'You are a precise data mapper. Respond with valid JSON only.' },
+        { role: 'user', content: prompt },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0,
+      max_tokens: 500,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`DeepSeek ${response.status}: ${body}`);
+  }
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
 // ── LLM Calls ───────────────────────────────────────────────────────
 
 async function callOpenAI(prompt: string): Promise<string> {
@@ -228,13 +262,13 @@ function parseJSON(raw: string): T2Result | null {
 
 /**
  * Classify a single unmatched clause via T2 LLM mapper.
- * Chain: GPT-4o-mini → Claude Sonnet → Claude Haiku → degraded
+ * Chain: GPT-4o-mini → DeepSeek-V3 → Claude Haiku → degraded
  * Returns { mapped: false } when all models unavailable or clause unmappable.
  */
 export async function classifyClause(clauseText: string): Promise<T2Result> {
   const prompt = buildPrompt(clauseText);
 
-  // Try GPT-4o-mini first
+  // Try GPT-4o-mini first (cheapest, fastest, json_object mode)
   if (process.env.OPENAI_API_KEY) {
     try {
       const raw = await callOpenAI(prompt);
@@ -243,24 +277,24 @@ export async function classifyClause(clauseText: string): Promise<T2Result> {
         result.modelUsed = 'gpt-4o-mini';
         return result;
       }
-      console.warn('[T2] GPT-4o-mini response failed validation, escalating to Claude');
+      console.warn('[T2] GPT-4o-mini response failed validation, escalating to DeepSeek-V3');
     } catch (err) {
       console.warn('[T2] GPT-4o-mini call failed:', err instanceof Error ? err.message : err);
     }
   }
 
-  // Escalate to Claude Sonnet
-  if (process.env.ANTHROPIC_API_KEY) {
+  // Escalate to DeepSeek-V3 (13x cheaper than Sonnet, OpenAI-compatible)
+  if (process.env.DEEPSEEK_API_KEY) {
     try {
-      const raw = await callAnthropic(prompt, 'claude-sonnet-4-20250514');
+      const raw = await callDeepSeek(prompt);
       const result = parseJSON(raw);
       if (result) {
-        result.modelUsed = 'claude-sonnet-4-20250514';
+        result.modelUsed = 'deepseek-chat';
         return result;
       }
-      console.warn('[T2] Claude Sonnet response failed validation, trying Haiku');
+      console.warn('[T2] DeepSeek-V3 response failed validation, falling back to Claude Haiku');
     } catch (err) {
-      console.warn('[T2] Claude Sonnet call failed:', err instanceof Error ? err.message : err);
+      console.warn('[T2] DeepSeek-V3 call failed:', err instanceof Error ? err.message : err);
     }
   }
 

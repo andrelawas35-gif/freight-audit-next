@@ -231,4 +231,33 @@ describe('T2 Classifier — prompt construction', () => {
 
     expect(result.mapped).toBe(true);
   });
+
+  it('escalates to DeepSeek-V3 when GPT-4o-mini fails, then degrades without DEEPSEEK_API_KEY', async () => {
+    // First call (GPT-4o-mini) returns malformed JSON → escalates
+    // Second call (DeepSeek) has no key set → skips
+    // Third call (Claude Haiku) also mocked to fail → degrades
+    let callCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      return Promise.resolve({
+        ok: callCount === 1, // Only GPT-4o-mini "succeeds" with bad data
+        status: callCount === 1 ? 200 : 500,
+        json: async () => (callCount === 1
+          ? { choices: [{ message: { content: 'not json' } }] }
+          : { error: 'server error' }),
+        text: async () => 'server error',
+      });
+    });
+
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    // No DEEPSEEK_API_KEY set — should skip DeepSeek, try Claude, then degrade
+    const { classifyClause } = await import('../classifier');
+    const result = await classifyClause('Some clause.');
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    expect(result.mapped).toBe(false);
+    expect(result.modelUsed).toBe('degraded');
+  });
 });
