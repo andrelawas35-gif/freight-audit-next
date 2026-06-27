@@ -1,6 +1,6 @@
 # ADR 0004 — Gateway is an evaluator mode, not a separate service
 
-- Status: Accepted
+- Status: Accepted — reaffirmed and extended by [ADR 0016](0016-gateway-launches-in-process.md) (2026-06-27), which resolves the contradiction with 08-gateway.md D4 and records the in-process auth/log/cache implementation decisions.
 - Date: 2026-06-26
 - Deciders: Freight-audit domain-modeling grilling session
 - Replaces: E3 "New Fastify precheck service" from the fleet build plan

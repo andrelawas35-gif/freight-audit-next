@@ -91,6 +91,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 | [`docs/data-protection.md`](docs/data-protection.md) | Tenant isolation, Row-Level Security, restricted DB roles, cross-tenant BI boundary (planning) |
 | [`docs/policy-intelligence/`](docs/policy-intelligence/README.md) | Policy Intelligence concern (single source): pipeline, glossary, policy intake, extraction, taxonomy enums, backtest, readiness, schema. Start at the module README. (`docs/gateway-readiness.md` is now a redirect stub.) |
 | [`docs/LAUNCH-BLOCKERS.md`](docs/LAUNCH-BLOCKERS.md) | Open launch blockers only |
+| [`docs/LAUNCH-HARDENING-PLAN.md`](docs/LAUNCH-HARDENING-PLAN.md) | Build Plan v2 — multi-agent execution roster (Controller + 6 engineers) for the launch-hardening backlog (ADRs 0013–0016); start here for who-does-what and wave sequencing |
 | [`docs/observability.md`](docs/observability.md) | Sentry, structured logging, health checks, correlation IDs |
 | [`docs/BACKLOG.md`](docs/BACKLOG.md) | Open post-launch and product buildout work only |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Completed/historical changes only; not an open task list |

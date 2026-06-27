@@ -310,8 +310,11 @@ Launch-readiness review of stack fluidity. The two launch-blocking items (migrat
 
 **Overlaps**
 
-- [ ] **SO1 — 🟠 Reconcile the two gateways (and ADR 0004).** Precheck exists twice — [`app/api/v1/precheck/route.ts`](<../app/api/v1/precheck/route.ts>) (Next, via `lib/gateway/precheck.ts`) and [`services/gateway/src/precheck.ts`](../services/gateway/src/precheck.ts) (Fastify) — with duplicated logic and two auth models (single `GATEWAY_API_KEY` vs per-client `GATEWAY_API_KEY_<clientId>`). [ADR 0004](adr/0004-gateway-is-a-mode-not-a-service.md) decided the gateway is a Next.js route, *not* a service; E3 shipped the Fastify service against it.
-  - Acceptance: a decision (new/superseding ADR) — either Fastify is the gateway (give it SG4's deploy target, retire the Next route) or the Fastify service is retired and the Next route stands per ADR 0004; one auth model survives.
+- **SO1 — 🟠 Reconcile the two gateways — DECIDED by [ADR 0016](adr/0016-gateway-launches-in-process.md) (2026-06-27).** Launch Gateway = in-process Next.js route (ADR 0004 reaffirmed); 08-gateway.md D4 (Fastify) superseded; `services/gateway/` shelved as reference impl for a future extraction. Implementation tasks:
+  - [ ] Port per-client-key auth into `/api/v1/precheck`: `GATEWAY_API_KEY_<clientId> → clientId`; ignore body `clientId` (reject if it disagrees); resolved tenant sets `app.current_tenant` for the `gateway_decisions` write. Closes the current tenant-spoofing hole.
+  - [ ] Write `gateway_decisions` synchronously in-request (as `app_tenant`); remove the file-buffer pattern (kills the ephemeral-FS + replay-wedge issues for the in-process path).
+  - [ ] Per-request effective-dated ruleset read at launch; defer the warm cache (and its version-selection fix) to the future extraction.
+  - [ ] Mark `services/gateway/` as not-launch-scoped (SG4 deploy work and the buffer/version fixes ride with the deferred extraction, not launch); ensure CI/deploy never treats it as a launch artifact.
 - [ ] **SO2 — Unify the AI client.** `@anthropic-ai/sdk` is a dependency but `classifier.ts`/`embeddings.ts` call OpenAI, DeepSeek, and Anthropic via raw `fetch` — four external calls, four keys, ad-hoc timeout/error handling, no shared retry.
   - Acceptance: a thin shared LLM client (timeout + retry + single key source); remove the unused SDK or use it consistently.
 - [ ] **SO3 — Stop calling Drizzle the migration mechanism until G3 is resolved.** Drizzle is schema-only (queries are raw SQL) and the kit migrate path is broken (= L1/G3). Update CLAUDE.md/data-layer.md once the source-of-truth decision lands.

@@ -1,11 +1,13 @@
 # Policy Intelligence — The Aurelian Gateway (operationalize step)
 
-> **STATUS: IMPLEMENTED (2026-06-26).** The Gateway V1 Fastify service is built at
-> `services/gateway/` — 6 source files implementing D1-D6. Shadow-first (`enforced: false`
-> always in V1), per-client API keys, versioned snapshot cache, risk-tiered fail handling,
-> at-least-once durable decision log. Backtest engine (E2) is correct; attestation UI (E4)
-> closes the governance liability loop. **LOCKED** = settled; **OPEN** = being resolved.
-> Implementation details in `../CHANGELOG.md`; remaining open work in `../BACKLOG.md`.
+> **STATUS (updated 2026-06-27): topology superseded by [ADR 0016](../adr/0016-gateway-launches-in-process.md).**
+> **D4 (separate Fastify service) is superseded** — the launch Gateway is the **in-process Next.js route**
+> (`/api/v1/precheck`), per ADR 0004. The Fastify service at `services/gateway/` is **shelved as the
+> reference implementation** for a future extraction (trigger: real pre-shipment volume / a partner needing
+> enforced <100ms prechecks), not a launch artifact. D1–D3, D5, D6 (interception model, shadow rollout,
+> always-200 contract, risk-tiered failure, per-client keys + forensic log) remain valid and are
+> implemented **in-process**; see ADR 0016 for the synchronous in-txn decision log and per-request cache.
+> **LOCKED** = settled; **OPEN** = being resolved. Implementation details in `../CHANGELOG.md`.
 
 ## What this is
 
@@ -105,7 +107,13 @@ enforcement for brands on that platform — do it per design-partner.
 - **Compatibility shim:** for a status-code-only legacy integration, map effective BLOCK →
   `403` for that client only; keep the canonical body-based contract everywhere else.
 
-### D4 — Topology: **separate always-on Fastify service; versioned snapshot cache** — LOCKED
+### D4 — Topology: ~~separate always-on Fastify service~~ → **SUPERSEDED by [ADR 0016](../adr/0016-gateway-launches-in-process.md)**
+> **Superseded 2026-06-27.** D4 chose a separate Fastify service for the <100ms warm-cache hot path —
+> but that latency pressure only exists at real throughput, which is zero at launch. ADR 0016 launches
+> the Gateway **in-process** (Next.js route) and shelves the Fastify service as a reference implementation
+> for a future extraction. The reasoning below is retained as the rationale for that future extraction; it
+> is **not** the launch topology.
+
 The proposal's stack is self-contradictory: Vercel/Lambda serverless + in-memory cache +
 <100ms cannot all hold (cold starts blow the budget; per-instance memory can't be a
 coherent, invalidatable cache).
