@@ -238,7 +238,6 @@ export async function getHighMatchCandidates(
         first_seen_at
       FROM clause_embeddings
       WHERE match_count >= $1
-        AND deleted_at IS NULL
       ORDER BY match_count DESC, last_matched_at DESC
       LIMIT 100`,
       [minCount]
