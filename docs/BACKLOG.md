@@ -67,10 +67,12 @@ ADR 0011 taxonomy discovery (Phase 4) and temperature gap (Phase 0) remain valid
   - Acceptance: 49/49 tests pass; realistic document batch test covers 14 canonical clauses; zero API dependencies; all 351 suite tests pass
 
 **Phase 2 — T2 LLM Data Mapper + T3 Vector Memory Bank (ADR 0012 D3-D4)**
-- [ ] Implement T2 LLM mapper — strict PolicyCondition schema alignment, Zod-gated, degrade pattern
+- [x] Implement T2 LLM mapper — strict PolicyCondition schema alignment, Zod-gated, degrade pattern
   - Acceptance: LLM output constrained to existing PolicyCondition keys; `{ mapped: false }` response for unmappable clauses; Zod validation rejects unknown keys; cheap-first escalation preserved from ADR 0011 D2
-- [ ] Create `clause_embeddings` table (pgvector) + embedding generation
+- [x] Create `clause_embeddings` table (pgvector) + embedding generation
   - Acceptance: stores clause_text, embedding, classified_rule_key, classified_condition_json, classification_source, match_count; 0.92 cosine similarity threshold; cross-client deduplication; graceful degradation without embedding API key
+- [x] Build Tier Orchestrator (`pipeline.ts`) — T1 → T3 → T2 → T4 flow with p-limit(5) concurrency
+  - Acceptance: T1 sync, T3 async check, T2 LLM mapper concurrent, T4 unmapped bucket; PipelineResult with stats (t1Hits, t3Hits, t2Mapped, t4Unmapped, totalCost)
 - [ ] Wire T3 → T1 feedback loop: high-match-count T3 entries → automatic T1 pattern suggestions
   - Acceptance: clauses with match_count > 10 surface as "Consider adding T1 pattern" in staff console
 

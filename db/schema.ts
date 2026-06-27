@@ -38,6 +38,7 @@ const pbrId  = sql`'pbr' || replace(gen_random_uuid()::text, '-', '')`;
 const graId  = sql`'gra' || replace(gen_random_uuid()::text, '-', '')`;
 const gdId   = sql`'gd'  || replace(gen_random_uuid()::text, '-', '')`;
 const ptcId  = sql`'ptc' || replace(gen_random_uuid()::text, '-', '')`;
+const ceId   = sql`'ce_' || replace(gen_random_uuid()::text, '-', '')`;
 const atId   = sql`'at'  || replace(gen_random_uuid()::text, '-', '')`;
 const ibId   = sql`'ib'  || replace(gen_random_uuid()::text, '-', '')`;
 const irId   = sql`'ir'  || replace(gen_random_uuid()::text, '-', '')`;
@@ -663,6 +664,9 @@ export const policyRules = pgTable('policy_rules', {
   severity:      text('severity').notNull().default('warn'),
   clauseRef:     text('clause_ref'),
   status:        text('status').notNull().default('draft'),
+  signalSource:  text('signal_source'),
+  sourceClauseText: text('source_clause_text'),
+  confidence:    numeric('confidence'),
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt:     timestamp('deleted_at', { withTimezone: true }),
@@ -711,6 +715,23 @@ export const policyBacktestResults = pgTable('policy_backtest_results', {
   index('idx_policy_backtest_results_run').on(t.backtestRunId),
   index('idx_policy_backtest_results_client').on(t.clientId, t.category),
   index('idx_policy_backtest_results_rule').on(t.ruleId),
+]);
+
+/** T3 Vector Memory Bank — cross-tenant clause embeddings (ADR 0012 D4). No client_id — clauses are language. */
+export const clauseEmbeddings = pgTable('clause_embeddings', {
+  id:                     text('id').primaryKey().default(ceId),
+  clauseText:             text('clause_text').notNull(),
+  embedding:              /* vector(1536) — stored as text for Drizzle compat; pgvector extension manages native type */ text('embedding'),
+  classifiedRuleKey:      text('classified_rule_key').notNull(),
+  classifiedConditionJson: jsonb('classified_condition_json').notNull(),
+  classificationSource:   text('classification_source').notNull().default('tokenizer'),
+  matchCount:             integer('match_count').notNull().default(1),
+  firstSeenAt:            timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastMatchedAt:          timestamp('last_matched_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt:              timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_clause_embeddings_clause').on(t.clauseText, t.classifiedRuleKey),
+  index('idx_clause_embeddings_match_count').on(t.matchCount.desc()),
 ]);
 
 // ── Keystone Phase 0 tables (contracts-v1) ─────────────────────────
