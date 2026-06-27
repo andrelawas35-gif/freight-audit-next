@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from 'react';
 import type { AttestationRecord, AttestationData } from '@/lib/portal/attestation';
-import { getAttestationData, attestPolicy } from '@/lib/portal/attestation';
+import { getAttestationData, attestRuleset } from '@/lib/portal/attestation';
 
 // ── SectionCard (matching compliance-tab.tsx / dashboard.tsx) ────
 
@@ -85,15 +85,14 @@ export function AttestationPanel({ clientId }: { clientId: string }) {
   const hasPending = data && data.pendingCount > 0;
   const isLoading = data === null && error === null;
 
-  // Placeholder attest — wires to first pending policy (dummy for now)
+  // Placeholder attest — wires to first pending ruleset (to be wired to actual selection UI)
   function handleAttest() {
     setAttestMsg(null);
     startAttestation(async () => {
       try {
-        // Placeholder policy ID — will be wired to actual attest workflow later
-        const result = await attestPolicy('placeholder-policy-id', 'current');
+        const result = await attestRuleset(clientId, 'placeholder-ruleset-id', 'Client attestation');
         if (result.success) {
-          setAttestMsg('Policy attested successfully.');
+          setAttestMsg('Attestation recorded successfully.');
           // Refresh data
           const refreshed = await getAttestationData(clientId);
           setData(refreshed);
@@ -219,7 +218,7 @@ export function AttestationPanel({ clientId }: { clientId: string }) {
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        {att.policy_name || `Policy #${att.policy_id || att.id}`}
+                        {att.scope_statement || `Ruleset ${att.ruleset_id}`}
                       </div>
                       <div
                         style={{
@@ -229,23 +228,8 @@ export function AttestationPanel({ clientId }: { clientId: string }) {
                         }}
                       >
                         {formatDate(att.attested_at)} · {truncateEmail(att.attested_by)}
-                        {att.ruleset_version ? ` · v${att.ruleset_version}` : ''}
                       </div>
                     </div>
-                    {att.ruleset_version && (
-                      <span
-                        style={{
-                          fontFamily: 'var(--mono)',
-                          fontSize: 9,
-                          fontWeight: 600,
-                          color: 'rgba(255,255,255,0.3)',
-                          marginLeft: 12,
-                          flexShrink: 0,
-                        }}
-                      >
-                        v{att.ruleset_version}
-                      </span>
-                    )}
                   </div>
                 ))}
               </div>
