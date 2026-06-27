@@ -4,6 +4,17 @@ Completed or historical changes belong here. Keep `docs/LAUNCH-BLOCKERS.md` and 
 
 ## 2026-06-26
 
+### Phase 3 — T4 Client Ambiguity Dashboard + DeepSeek-V3 (ADR 0012 D5)
+
+- **T4 dashboard deployed**: Portal `/portal/policy-review` page with Define/Exclude/Flag workflow. Clients review unmapped policy clauses and choose actions: Define creates draft `policy_rules` with `signal_source='CLIENT_DEFINED'`; Exclude creates `policy_scope_exclusions` binding governance record; Flag routes to staff review.
+- **Schema**: Migration `0013_policy_scope_exclusions.sql` — `policy_scope_exclusions` table with `exclusion_type` (define/exclude/flag), status lifecycle (pending_review→staff_review→excluded/defined), `pseId` prefix, Drizzle schema.
+- **Pipeline integration**: `isClauseExcluded()` check before T1 skips already-excluded clauses. `storeUnmappedClause()` idempotent upsert — re-running same clause bumps `updated_at`, no duplicates. `CLIENT_EXCLUDED` added to `ClassificationSource` union. `clientId`/`policyId` added to `PipelineOptions` for T4 routing.
+- **Taxonomy**: `CLIENT_DEFINED` added to `GATEWAY_SIGNAL_SOURCES`.
+- **Server actions**: `defineClauseAction` (transaction-safe: scope exclusion update + draft rule INSERT), `excludeClauseAction`, `flagClauseAction` — all client-scoped via `session.user.clientId`.
+- **DeepSeek-V3**: Added `callDeepSeek()` in `classifier.ts`. T2 escalation chain restructured: GPT-4o-mini → DeepSeek-V3 → Claude Haiku → degraded. Requires `DEEPSEEK_API_KEY` env var; gracefully skips if unset. 13x cost savings on escalation tier ($1.10/1M output vs $15/1M for Claude Sonnet).
+- **Tests**: 7 new T4 scope exclusion tests. 19/19 test files pass, 0 TS errors.
+- **Commit**: `c7a0349` — 11 files changed, +1216 lines.
+
 ### Grilling Session — 4-Tier Extraction & Classification (ADR 0012)
 
 - **ADR 0012 created** — 7 architectural decisions for 4-tier extraction & classification architecture, superseding ADR 0011's extraction portions.

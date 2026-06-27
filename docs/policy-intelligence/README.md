@@ -24,16 +24,17 @@ have been allowed under the client's contract, insurance, SLA, SOP, and exceptio
 rules?"* Keep these concerns separate; let their outputs join only in the Gateway
 Readiness Assessment.
 
-## The 4-step pipeline
+## The 4-tier extraction pipeline (ADR 0012)
 
 ```text
-1. Ingestion       policy documents + historical shipments/invoices/claims/audit findings
-2. Extraction      clauses -> structured policy_rules (condition/action JSON), human-confirmed
-3. Gap analysis    active/draft ruleset backtested against 12-24 months of history
-4. Operationalize  confirmed ruleset becomes the future gateway config + monitoring hooks
+TIER 1 — Deterministic Tokenizer     phrase/pattern matching, zero-cost, zero-latency, ~40-60% coverage
+TIER 2 — LLM Data Mapper            GPT-4o-mini → DeepSeek-V3 → Claude Haiku escalation, Zod-gated
+TIER 3 — Vector Memory Bank          pgvector semantic caching, cross-client dedup, T3→T1 feedback loop
+TIER 4 — Client Ambiguity Dashboard  Define/Exclude/Flag — shifts unmappable clauses from staff cost
+                                     center to premium client compliance workflow
         |
         v
-   Gateway Readiness Assessment -> pre-shipment product roadmap
+   Structured policy_rules → Backtest → Gateway Readiness Assessment
 ```
 
 ## Files in this module
@@ -62,8 +63,15 @@ Readiness Assessment.
 | `/policies/[policyId]/backtests` | Historical backtest runs |
 | `/gateway-readiness/[clientId]` | Client readiness assessment |
 
-All routes are `requireStaff()`. Policy Intelligence **is the consulting handover** —
-clients never author their own rules. See [`01-ingestion.md`](01-ingestion.md#trust-and-scope).
+## Portal routes (client-facing)
+
+| Route | Purpose |
+|-------|---------|
+| `/portal/policy-review` | T4 Client Ambiguity Dashboard — Define/Exclude/Flag unmapped clauses |
+
+All staff routes are `requireStaff()`. The `/portal/policy-review` route is client-scoped via `session.user.clientId`.
+
+**Trust boundary**: T4 marks a shift — clients now Define (author their own rules with `CLIENT_DEFINED` signal), Exclude (binding governance record), or Flag (route to staff). This is a premium compliance workflow, not self-service rule authoring. See ADR 0012 D5.
 
 ## Invariants (from CLAUDE.md)
 
@@ -86,7 +94,8 @@ Stable contracts live in this module. **Open work lives in
 [`../BACKLOG.md`](../BACKLOG.md)** (Policy Intelligence MVP section) and historical
 changes in [`../CHANGELOG.md`](../CHANGELOG.md). Do not duplicate status checklists here.
 
-Code today: `lib/intelligence/{taxonomy,policy-evaluator,policy-service,reports}.ts`,
-schema in `db/schema.ts`, migrations `0004_gateway_insurance_intelligence.sql` and
-`0005_policy_intelligence_mvp.sql`, UI under `app/(console)/policies/` and
-`app/(console)/gateway-readiness/`.
+Code today: `lib/intelligence/{taxonomy,policy-evaluator,policy-service,reports,classifier,tokenizer,pipeline}.ts`,
+schema in `db/schema.ts`, migrations `0004_gateway_insurance_intelligence.sql`,
+`0005_policy_intelligence_mvp.sql`, `0013_policy_scope_exclusions.sql`,
+UI under `app/(console)/policies/`, `app/(console)/gateway-readiness/`,
+`app/(portal)/portal/policy-review/`.

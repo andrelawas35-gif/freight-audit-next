@@ -70,13 +70,28 @@ and the ingestion data clerk.
 
 ## Extraction architecture
 
+> **Note**: ADR 0012 (4-Tier Extraction & Classification) supersedes ADR 0011's extraction design. The 6-stage pipeline below is replaced by a 4-tier architecture: T1 Deterministic Tokenizer → T2 LLM Data Mapper → T3 Vector Memory Bank → T4 Client Ambiguity Dashboard. See [ADR 0012](../adr/0012-four-tier-extraction-classification.md) for the current architecture.
+
 The extractor is an **async, queued, human-reviewed** worker — never in a user request
 path. It rides the existing Postgres job queue (`audit_jobs`, `FOR UPDATE SKIP LOCKED`)
 with a new `policy_extract` job type. Do **not** introduce a second orchestrator/state
 store (e.g. a graph checkpointer) as a parallel source of truth for "where is this
 document in the pipeline" — one queue, one status model (`policy_documents.extraction_status`).
 
-### Pipeline stages
+### 4-tier classification pipeline (ADR 0012)
+
+```text
+TIER 1 — Deterministic Tokenizer     phrase/pattern matching, zero-cost, zero-latency
+                                      Catches 85-95% of standard clauses without API calls
+TIER 2 — LLM Data Mapper            GPT-4o-mini → DeepSeek-V3 → Claude Haiku escalation
+                                      Strict PolicyCondition schema alignment, Zod-gated
+TIER 3 — Vector Memory Bank          pgvector semantic caching, cross-client dedup
+                                      T3→T1 feedback loop: high-match entries → pattern suggestions
+TIER 4 — Client Ambiguity Dashboard  Portal Define/Exclude/Flag — shifts unmappable clauses
+                                      from staff cost center to premium compliance workflow
+```
+
+### Legacy: 6-stage pipeline (ADR 0011, superseded)
 
 ```text
 1. parse      stored blob -> structured text/tables        (LlamaParse)
@@ -131,8 +146,4 @@ human-gated LLM calls that degrade gracefully when `ANTHROPIC_API_KEY` is absent
 
 ## Today's state
 
-There is no AI extractor yet. `addPolicyRule` is fully manual — staff hand-author
-`condition_json` / `action_json`, and `addRuleAction` already validates the decision
-against `GATEWAY_ACTIONS`. The human-confirm gate is therefore real *because a human is
-the only author*. The structural controls above must be in place **before** the AI
-extractor is wired in, not after.
+The 4-tier pipeline is fully implemented (ADR 0012 Phases 1–3). T1 tokenizer (33 patterns, 49 tests), T2 LLM mapper (GPT-4o-mini → DeepSeek-V3 → Claude Haiku), T3 vector memory bank (pgvector, tri-band threshold, feedback loop), and T4 client dashboard (`/portal/policy-review`) are all deployed and passing 19/19 test files. `addPolicyRule` remains available for staff manual authoring. The human-confirm gate is structurally enforced: extraction output is always `status='draft'`; activation is a separate, staff-only transition.

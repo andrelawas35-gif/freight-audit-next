@@ -76,15 +76,17 @@ ADR 0011 taxonomy discovery (Phase 4) and temperature gap (Phase 0) remain valid
 - [x] Wire T3 → T1 feedback loop: high-match-count T3 entries → automatic T1 pattern suggestions
   - Acceptance: clauses with match_count > 10 surface as "Consider adding T1 pattern" in staff console
 
-**Phase 3 — T4 Client Ambiguity Dashboard (ADR 0012 D5)**
-- [ ] Create portal "Policy Review" page (`/portal/policy-review`) — Define/Exclude/Flag workflow
+**Phase 3 — T4 Client Ambiguity Dashboard (ADR 0012 D5)** ✅
+- [x] Create portal "Policy Review" page (`/portal/policy-review`) — Define/Exclude/Flag workflow
   - Acceptance: client sees source clause text, plain-English summary, three actions; Define creates draft rule with `signal_source='CLIENT_DEFINED'`; Exclude creates `policy_scope_exclusions` row with attestation timestamp; Flag routes to staff review
-- [ ] Add `policy_scope_exclusions` table + migration
-  - Acceptance: stores client_id, policy_id, clause_ref, clause_text, excluded_at, excluded_by, reason
-- [ ] Add `CLIENT_DEFINED` to `gatewaySignalSource` taxonomy enum
-  - Acceptance: `lib/intelligence/taxonomy.ts` updated; migration adds enum value
+- [x] Add `policy_scope_exclusions` table + migration (`0013_policy_scope_exclusions.sql`)
+  - Acceptance: stores client_id, policy_id, clause_text, exclusion_type (define/exclude/flag), status lifecycle (pending_review→staff_review→excluded/defined/staff_approved/staff_rejected), attestation timestamps
+- [x] Add `CLIENT_DEFINED` to `gatewaySignalSource` taxonomy enum
+  - Acceptance: `lib/intelligence/taxonomy.ts` updated; `CLIENT_EXCLUDED` added to `ClassificationSource` union in pipeline
+- [x] Pipeline integration: `isClauseExcluded()` skips already-excluded clauses before T1; `storeUnmappedClause()` idempotent upsert with `pending_review` default; `clientId`/`policyId` added to `PipelineOptions`
 - [ ] Wire scope exclusions into Coverage Gap Feed — excluded clauses suppressed with "Excluded by client" annotation
   - Acceptance: coverage gap report shows exclusion reason instead of "System failed to detect"
+- [x] DeepSeek-V3 added to T2 escalation chain: GPT-4o-mini → DeepSeek-V3 → Claude Haiku → degraded (13x cheaper than Claude Sonnet on escalation tier, OpenAI-compatible API at `api.deepseek.com`)
 
 **Phase 4 — Taxonomy Discovery (ADR 0011 D5-D6, retained)**
 - [ ] Add `policy_taxonomy_candidates` table + migration.
@@ -177,7 +179,7 @@ The 4-tier architecture replaces the linear 6-stage pipeline.
 - [ ] T1: `lib/intelligence/tokenizer.ts` — deterministic phrase/pattern matching (see Taxonomy Discovery Phase 1 above)
 - [ ] T2: LLM data mapper with Zod validation + degrade pattern
 - [ ] T3: `clause_embeddings` pgvector table + semantic caching
-- [ ] T4: Client ambiguity dashboard — Define/Exclude/Flag workflow
+- [x] T4: Client ambiguity dashboard — Define/Exclude/Flag workflow
 
 ### Gateway Readiness Taxonomy
 
