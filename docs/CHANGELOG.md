@@ -13,6 +13,15 @@ Completed or historical changes belong here. Keep `docs/LAUNCH-BLOCKERS.md` and 
 - **Server actions**: `defineClauseAction` (transaction-safe: scope exclusion update + draft rule INSERT), `excludeClauseAction`, `flagClauseAction` — all client-scoped via `session.user.clientId`.
 - **DeepSeek-V3**: Added `callDeepSeek()` in `classifier.ts`. T2 escalation chain restructured: GPT-4o-mini → DeepSeek-V3 → Claude Haiku → degraded. Requires `DEEPSEEK_API_KEY` env var; gracefully skips if unset. 13x cost savings on escalation tier ($1.10/1M output vs $15/1M for Claude Sonnet).
 - **Tests**: 7 new T4 scope exclusion tests. 19/19 test files pass, 0 TS errors.
+
+### Phase 4 — Taxonomy Discovery (ADR 0011 D5-D6)
+
+- **Schema migration 0014**: Evolved `policy_taxonomy_candidates` table (pre-existing from 0006) with ALTER-only migration: `source_clause`, `description`, `document_id`, `clause_ref`, `promoted_by/at`, `rejected_by/at`, `reject_reason`, `inferred_bounds`, `deleted_at`. Renamed `inferred_datatype` → `inferred_type`. Unique index on `rule_key` for dedup. Added `is_taxonomy_admin` to `app_users`.
+- **Auth plumbing**: `isTaxonomyAdmin` flows from DB (`appUsers.is_taxonomy_admin`) → JWT callback → session callback → `session.user.isTaxonomyAdmin`. Types updated in `next-auth.d.ts` and `AppUser`.
+- **Pipeline L3 detection**: After T4 storage, `filter(r => !r.mapped)` produces grounded-but-unmappable results → `normalizeForKey()` generates stable `l3_` keys → `upsertTaxonomyCandidate()` deduplicates by `rule_key`, bumping `seen_count` on repeat. Only fires when `options.policyId` is present (grounding check).
+- **Policy service**: `upsertTaxonomyCandidate()` — idempotent create-or-bump. `getTaxonomyCandidates()` — ranked by `seen_count DESC`, filters for `lifecycleStatus`, `surfacingClientId`, `limit`. `getKnownRuleKeys()` — UNION of `extractable`/`enforceable` candidates + active `policy_rules`.
+- **Staff console UI**: `/console/taxonomy` page — 4 KPI cards (captured/extractable/enforceable/rejected), ranked candidate table with interactive promote (green, taxonomy_admin only) and reject (grey, with inline reason input) actions. Zod-validated, auth-gated.
+- **Tests**: 13 mock-based integration tests covering create, dedup, inferred type/bounds, lifecycle filtering, surfacing client filtering, limit, known keys UNION, promote/transitions, and L3 key normalization. 388 total tests, 0 failures, 0 TS errors.
 - **Commit**: `c7a0349` — 11 files changed, +1216 lines.
 
 ### Grilling Session — 4-Tier Extraction & Classification (ADR 0012)

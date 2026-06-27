@@ -28,6 +28,7 @@ const NAV = [
   { href: '/console/users',      label: 'Users',     glyph: 'shield',    kbd: '8' },
   { href: '/console/rulebook',   label: 'Rulebook',  glyph: 'book',      kbd: '9' },
   { href: '/console/gateway-tags', label: 'Gateway',  glyph: 'eye',       kbd: '0' },
+  { href: '/console/taxonomy',    label: 'Taxonomy', glyph: 'tag',       kbd: '-' },
 ];
 
 

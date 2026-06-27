@@ -348,6 +348,7 @@ export function Glyph({ name, size = 14 }: { name: string; size?: number }) {
     info:          'M12 12m-10 0a10 10 0 1 0 20 0 10 10 0 1 0-20 0M12 16v-4M12 8h.01',
     shield:        'M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z',
     book:          'M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2zM18 20a2 2 0 0 0 2-2V6M9 8h6M9 12h6',
+    tag:           'M8 3h8l3 3v8l-9 9-5-5zM6 8h.01',
   };
   const d = paths[name];
   if (!d) return null;
