@@ -72,6 +72,37 @@ async function callOpenAIEmbedding(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
+/**
+ * Batch embedding generation — sends an array of texts in one API call.
+ * OpenAI accepts `input: string[]` and returns embeddings in the same order.
+ */
+async function callOpenAIEmbeddingBatch(texts: string[]): Promise<(number[] | null)[]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  const response = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: texts,
+      dimensions: EMBEDDING_DIMENSIONS,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI batch embedding API error ${response.status}: ${err}`);
+  }
+
+  const data = await response.json();
+  // data.data is ordered same as input; extract embedding arrays
+  return data.data.map((item: { embedding: number[] }) => item.embedding);
+}
+
 /** Generate embedding vector. Returns null if no API key configured. */
 export async function generateEmbedding(text: string): Promise<number[] | null> {
   if (!process.env.OPENAI_API_KEY) return null;
@@ -80,6 +111,17 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
   } catch (err) {
     console.error('[T3] Embedding generation failed:', err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/** Generate embeddings for multiple texts in a single API call. Returns null entries for failures. */
+export async function generateEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
+  if (!process.env.OPENAI_API_KEY) return texts.map(() => null);
+  try {
+    return await callOpenAIEmbeddingBatch(texts);
+  } catch (err) {
+    console.error('[T3] Batch embedding generation failed:', err instanceof Error ? err.message : err);
+    return texts.map(() => null);
   }
 }
 

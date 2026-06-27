@@ -143,6 +143,10 @@ export type PolicyRuleRow = {
   severity: 'info' | 'warn' | 'block';
   clause_ref: string | null;
   status: PolicyStatus;
+  signal_source?: string | null;
+  staff_reviewed?: boolean;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1495,6 +1499,23 @@ export async function getTaxonomyCandidates(filters?: {
     LIMIT $${paramIdx}
   `, [...params, limit]) as unknown as TaxonomyCandidateRow[];
 
+  return rows;
+}
+
+/**
+ * Get CLIENT_DEFINED rules that haven't been staff-reviewed yet (ADR 0015).
+ * These are excluded from the attestable and activatable set until staff clears them.
+ */
+export async function getUnreviewedClientRules(clientId: string): Promise<PolicyRuleRow[]> {
+  const sql = await getSql();
+  const rows = await sql.query(`
+    SELECT * FROM policy_rules
+    WHERE client_id = $1
+      AND signal_source = 'CLIENT_DEFINED'
+      AND staff_reviewed = FALSE
+      AND deleted_at IS NULL
+    ORDER BY created_at ASC
+  `, [clientId]) as PolicyRuleRow[];
   return rows;
 }
 

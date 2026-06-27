@@ -9,7 +9,7 @@
  */
 
 import { tokenize, tokenizeAll } from './tokenizer';
-import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, incrementMatchCount, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
+import { findSimilarClauses, generateEmbedding, generateEmbeddings, storeClauseEmbedding, getHighMatchCandidates, incrementMatchCount, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
 import { classifyClause, type T2Result, type T2MappedResult } from './classifier';
 import { storeUnmappedClause, upsertTaxonomyCandidate } from './policy-service';
 import type { PolicyCondition, PolicyAction } from './policy-evaluator';
@@ -18,7 +18,7 @@ import { getSql } from '@/lib/db';
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type ClassificationSource = 'TOKENIZER' | 'VECTOR_MATCH' | 'LLM_MAPPER' | 'UNMAPPED' | 'CLIENT_EXCLUDED';
+export type ClassificationSource = 'TOKENIZER' | 'VECTOR_MATCH' | 'VECTOR_NEAR_MATCH' | 'LLM_MAPPER' | 'UNMAPPED' | 'CLIENT_EXCLUDED';
 
 export interface ClassificationResult {
   clauseText: string;
@@ -155,10 +155,11 @@ export async function classify(
   // ── T2 queue (populated as we go, awaited at end) ─────────────────
 
   const t2Queue: Promise<void>[] = [];
-  // Track which clauses need T2 — filled in the per-clause loop
   const t2Clauses: { text: string; idx: number }[] = [];
 
-  // ── Per-clause: T1 → T3 ───────────────────────────────────────────
+  // ── Phase 1: T1 + exclusion check (synchronous) ──────────────────
+  // Collect indices that passed T1 exclusion and need T3/T2.
+  const t3Eligible: { text: string; idx: number }[] = [];
 
   for (let i = 0; i < clauses.length; i++) {
     const clauseText = clauses[i].trim();
@@ -175,7 +176,7 @@ export async function classify(
       continue;
     }
 
-    // ── T4 Exclusion Check: skip already-excluded clauses ─────────
+    // ── T4 Exclusion Check ───────────────────────────────────────────
     if (options.clientId) {
       const { excluded, reason } = await isClauseExcluded(options.clientId, clauseText);
       if (excluded) {
@@ -192,7 +193,6 @@ export async function classify(
     }
 
     // ── T1: Deterministic tokenizer ──────────────────────────────────
-
     const t1Hit = tokenize(clauseText);
     if (t1Hit) {
       stats.t1Hits++;
@@ -211,18 +211,31 @@ export async function classify(
       continue;
     }
 
-    // ── T3: Vector memory bank ──────────────────────────────────────
+    // Missed T1 — eligible for T3 then T2
+    t3Eligible.push({ text: clauseText, idx: i });
+  }
 
-    const embedding = await generateEmbedding(clauseText);
-    if (embedding) {
-      stats.totalCost += COST_PER_EMBEDDING;
+  // ── Phase 2: T3 — batch embeddings + vector search ─────────────────
+  if (t3Eligible.length > 0) {
+    const t3Texts = t3Eligible.map(e => e.text);
+    const embeddings = await generateEmbeddings(t3Texts);
+    stats.totalCost += COST_PER_EMBEDDING * t3Texts.length;
+
+    for (let j = 0; j < t3Eligible.length; j++) {
+      const { text: clauseText, idx } = t3Eligible[j];
+      const embedding = embeddings[j];
+
+      if (!embedding) {
+        // Embedding failed — route to T2
+        t2Clauses.push({ text: clauseText, idx });
+        continue;
+      }
 
       const t3Match = await findSimilarClauses(embedding);
       if (t3Match.matched) {
         stats.t3Hits++;
-        // Bump match_count on the matched row (fire-and-forget)
         incrementMatchCount(t3Match.clauseText, t3Match.ruleKey);
-        results[i] = {
+        results[idx] = {
           clauseText,
           tier: 'T3',
           classificationSource: 'VECTOR_MATCH',
@@ -239,25 +252,26 @@ export async function classify(
         if (t3Match.clauseText && t3Match.ruleKey) {
           incrementMatchCount(t3Match.clauseText, t3Match.ruleKey);
         }
-        results[i] = {
+        results[idx] = {
           clauseText,
           tier: 'T3',
-          classificationSource: 'VECTOR_MATCH',
+          classificationSource: 'VECTOR_NEAR_MATCH',
           conditionJson: t3Match.conditionJson,
           confidence: t3Match.nearestSimilarity,
-          mapped: true,
-          reason: `Near-match at ${t3Match.nearestSimilarity.toFixed(3)} (threshold: ${SIMILARITY_THRESHOLD_FOR_LOG}). Awaiting T2 result.`,
+          mapped: false,
+          reason: `Near-match at ${t3Match.nearestSimilarity.toFixed(3)} (threshold: ${SIMILARITY_THRESHOLD_FOR_LOG}). Requires T2 mapping or staff confirmation.`,
         };
-        // Fall through to T2 — overwrite with better result if T2 maps
+        // Fall through to T2
+        t2Clauses.push({ text: clauseText, idx });
+        continue;
       }
-    }
 
-    // ── Route to T2 (either no T3 match, or near-match we want to improve) ──
-    t2Clauses.push({ text: clauseText, idx: i });
+      // No T3 match — route to T2
+      t2Clauses.push({ text: clauseText, idx });
+    }
   }
 
   // ── T2: LLM mapper (concurrent, p-limit 5) ────────────────────────
-  // We use t2Clauses to also capture near-match clauses that still need T2
 
   for (const { text, idx } of t2Clauses) {
     if (skipT2) {
@@ -285,7 +299,7 @@ export async function classify(
           storeT2Embedding(text, t2Result);
         } else {
           // Only count as T4 if there wasn't already a near-match entry
-          if (!results[idx]?.mapped) {
+          if (results[idx]?.tier !== 'T3') {
             stats.t4Unmapped++;
           }
         }
@@ -300,8 +314,8 @@ export async function classify(
               confidence: t2Result.confidence,
               mapped: true,
             }
-          : (results[idx]?.mapped
-              ? results[idx] // Keep near-match result
+          : (results[idx]?.tier === 'T3'
+              ? results[idx] // Keep near-match result (mapped: false, staff review required)
               : {
                   clauseText: text,
                   tier: 'T4',

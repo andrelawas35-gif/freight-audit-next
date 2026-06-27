@@ -255,12 +255,14 @@ export async function activateRulesetAction(_prev: PolicyActionState, formData: 
       AND status = 'client_attested'
   `;
 
-  // Transition all rules in this ruleset from draft to active
+  // Transition all rules in this ruleset from draft to active,
+  // excluding unreviewed CLIENT_DEFINED rules (ADR 0015: staff correctness gate).
   await sql`
     UPDATE policy_rules
     SET status = 'active'
     WHERE ruleset_id = ${parsed.data.rulesetId}
       AND status = 'draft'
+      AND NOT (signal_source = 'CLIENT_DEFINED' AND staff_reviewed = FALSE)
   `;
 
   revalidatePolicy(parsed.data.policyId);

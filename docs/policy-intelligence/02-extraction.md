@@ -147,3 +147,13 @@ human-gated LLM calls that degrade gracefully when `ANTHROPIC_API_KEY` is absent
 ## Today's state
 
 The 4-tier pipeline is fully implemented (ADR 0012 Phases 1–3). T1 tokenizer (33 patterns, 49 tests), T2 LLM mapper (GPT-4o-mini → DeepSeek-V3 → Claude Haiku), T3 vector memory bank (pgvector, tri-band threshold, feedback loop), and T4 client dashboard (`/portal/policy-review`) are all deployed and passing 19/19 test files. `addPolicyRule` remains available for staff manual authoring. The human-confirm gate is structurally enforced: extraction output is always `status='draft'`; activation is a separate, staff-only transition.
+
+### Pipeline fixes (Wave 2 — 2026-06-27)
+
+- **T3 near-match fix**: Near-match clauses (0.85-0.919 cosine similarity) now have `mapped: false` and `classificationSource: 'VECTOR_NEAR_MATCH'` instead of auto-applying. They require T2 LLM mapping or staff confirmation before enforcement (per ADR 0012 D4).
+- **Batch embeddings**: T3 embedding generation is now batched — all T3-eligible clauses are sent in a single OpenAI embeddings API call, reducing sequential round trips from N to 1.
+- **T4 vocabulary reconciliation**: `defineClauseAction` now sets `exclusion_type = 'define'` (was missing). `excludeClauseAction` and `flagClauseAction` now store `session.user.id` in `excluded_by` (was storing org `clientId`). Status/exclusion_type vocabulary is consistent across pipeline, actions, and UI: `pending_review` → `defined`/`excluded`/`staff_review`, with `exclusion_type` of `define`/`exclude`/`flag` respectively.
+- **`CLIENT_FLAGGED`**: Confirmed unused anywhere — removed from candidate vocabulary.
+- **`VECTOR_NEAR_MATCH`**: Added to `ClassificationSource` union type. Near-matches route to T2 for LLM mapping; if T2 fails, they remain as T3_NEAR with `mapped: false` for staff review.
+- **`staff_reviewed` gate (ADR 0015)**: New columns on `policy_rules` (`staff_reviewed`, `reviewed_by`, `reviewed_at`). `defineClauseAction` creates rules with `staff_reviewed = FALSE` (default). `activateRulesetAction` skips unreviewed `CLIENT_DEFINED` rules during activation. `getUnreviewedClientRules(clientId)` added for staff console review queue.
+- **`clause_hash` accelerator**: New column on `clause_embeddings` with hash index for faster lookups on long text values.

@@ -26,9 +26,9 @@
 | 0015 | E4 | reserved | FK constraints (G1) |
 | 0016 | E4 | reserved | CHECK constraints (G5) |
 | 0017 | E4 | reserved | policy_attestations table (G2+O4) |
-| 0018 | E3 | reserved | RLS rollout (ADR 0013) |
-| 0019 | E5 | reserved | staff_reviewed column (ADR 0015) |
-| 0020 | E5 | reserved | clause_hash unique index |
+| 0018 | E3 | created | RLS rollout portal read-set (ADR 0013) |
+| 0019 | E5 | created | staff_reviewed column (ADR 0015) |
+| 0020 | E5 | created | clause_hash index |
 | 0021 | E5 | reserved | T3 batch index / pipeline schema |
 
 ## Allocation Protocol

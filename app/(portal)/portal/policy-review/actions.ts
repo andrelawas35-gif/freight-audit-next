@@ -53,6 +53,13 @@ async function getClientId(): Promise<string> {
   return clientId;
 }
 
+async function getUserId(): Promise<string> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error('Not authorized — no user session.');
+  return userId;
+}
+
 // ── Actions ──────────────────────────────────────────────────────────
 
 /**
@@ -91,6 +98,7 @@ export async function defineClauseAction(input: DefineClauseInput): Promise<T4Ac
       const updateResult = await sql.query(`
         UPDATE policy_scope_exclusions
         SET status = 'defined',
+            exclusion_type = 'define',
             rule_key = $2,
             condition_json = $3::jsonb,
             reason = $4,
@@ -148,6 +156,7 @@ export async function defineClauseAction(input: DefineClauseInput): Promise<T4Ac
 export async function excludeClauseAction(input: ExcludeClauseInput): Promise<T4ActionResult> {
   try {
     const clientId = await getClientId();
+    const userId = await getUserId();
     const sql = await getSql();
 
     const result = await sql.query(`
@@ -158,9 +167,9 @@ export async function excludeClauseAction(input: ExcludeClauseInput): Promise<T4
           excluded_by = $3,
           excluded_at = NOW(),
           updated_at = NOW()
-      WHERE id = $1 AND client_id = $3 AND status = 'pending_review'
+      WHERE id = $1 AND client_id = $4 AND status = 'pending_review'
       RETURNING id
-    `, [input.scopeExclusionId, input.reason, clientId]);
+    `, [input.scopeExclusionId, input.reason, userId, clientId]);
 
     if (!result || (result as any[]).length === 0) {
       return { success: false, error: 'Scope exclusion not found or already processed.' };
@@ -181,6 +190,7 @@ export async function excludeClauseAction(input: ExcludeClauseInput): Promise<T4
 export async function flagClauseAction(input: FlagClauseInput): Promise<T4ActionResult> {
   try {
     const clientId = await getClientId();
+    const userId = await getUserId();
     const sql = await getSql();
 
     const result = await sql.query(`
@@ -190,9 +200,9 @@ export async function flagClauseAction(input: FlagClauseInput): Promise<T4Action
           reason = $2,
           excluded_by = $3,
           updated_at = NOW()
-      WHERE id = $1 AND client_id = $3 AND status = 'pending_review'
+      WHERE id = $1 AND client_id = $4 AND status = 'pending_review'
       RETURNING id
-    `, [input.scopeExclusionId, input.note || null, clientId]);
+    `, [input.scopeExclusionId, input.note || null, userId, clientId]);
 
     if (!result || (result as any[]).length === 0) {
       return { success: false, error: 'Scope exclusion not found or already processed.' };
