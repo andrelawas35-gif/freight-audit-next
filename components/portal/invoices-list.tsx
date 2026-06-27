@@ -26,6 +26,7 @@ export function InvoicesList({ rows }: { rows: InvoiceRow[] }) {
   const total = rows.reduce((sum, row) => sum + row.total, 0);
   const flagged = rows.reduce((sum, row) => sum + row.flagged, 0);
   const errorRate = total > 0 ? (flagged / total) * 100 : 0;
+  const mayHaveMoreRows = rows.length >= 1000;
 
   return <div className="portal-page-stack">
     <div className="portal-page-header"><h1>Invoices</h1><button className="portal-ghost-button" onClick={() => exportCsv(rows)}>Export CSV</button></div>
@@ -39,7 +40,9 @@ export function InvoicesList({ rows }: { rows: InvoiceRow[] }) {
       {rows.length > 0 && (
         <div className="portal-table-footer">
           <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.03em' }}>
-            {rows.length} invoices
+            {mayHaveMoreRows
+              ? `Showing first ${rows.length.toLocaleString()} invoices; more may be available`
+              : `${rows.length.toLocaleString()} invoices`}
           </span>
         </div>
       )}

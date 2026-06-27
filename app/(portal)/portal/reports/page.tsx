@@ -1,5 +1,5 @@
 import { auth } from '@/auth';
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import { ReportsList } from '@/components/portal/reports-list';
 import type { Dispute, Invoice } from '@/lib/types';
 
@@ -15,8 +15,8 @@ export default async function ReportsPage() {
   let invoices: Invoice[] = [];
   try {
     [disputes, invoices] = await Promise.all([
-      fetchRecords('Disputes', { filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`, maxRecords: 1000 }) as Promise<Dispute[]>,
-      fetchRecords('Invoices', { filterByFormula: `FIND("${clientId}", ARRAYJOIN({Clients}))`, maxRecords: 2000 }) as Promise<Invoice[]>,
+      fetchRecords('Disputes', { filterByFormula: `{Client} = "${clientId}"`, maxRecords: 1000 }) as Promise<Dispute[]>,
+      fetchRecords('Invoices', { filterByFormula: `{Clients} = "${clientId}"`, maxRecords: 2000 }) as Promise<Invoice[]>,
     ]);
   } catch (error) {
     console.error('Portal reports load failed:', error);

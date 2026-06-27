@@ -207,17 +207,33 @@ describe('duplicateTrackingRule', () => {
     expect(result!.notes).toContain('INV-002');
   });
 
-  it('does not flag when carrier differs', () => {
-    const invoice1 = makeInvoice({ id: 'inv-1', 'Carrier': 'UPSN' });
-    const invoice2 = makeInvoice({ id: 'inv-2', 'Carrier': 'FEDX' });
+  it('flags when carrier differs (same PRO = duplicate regardless of carrier)', () => {
+    const invoice1 = makeInvoice({ id: 'inv-1', 'Invoice number': 'INV-001', 'Carrier': 'UPSN' });
+    const invoice2 = makeInvoice({ id: 'inv-2', 'Invoice number': 'INV-002', 'Carrier': 'FEDX' });
     const result = duplicateTrackingRule(invoice1, makeShipment(), ctx({ allInvoices: [invoice1, invoice2] }));
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ruleCode).toBe('DUPLICATE_TRACKING');
+    expect(result!.notes).toContain('INV-002');
   });
 
-  it('does not flag when date differs', () => {
-    const invoice1 = makeInvoice({ id: 'inv-1', 'Invoice date': '2025-06-01' });
-    const invoice2 = makeInvoice({ id: 'inv-2', 'Invoice date': '2025-06-02' });
+  it('flags when date differs (same PRO = duplicate regardless of date)', () => {
+    const invoice1 = makeInvoice({ id: 'inv-1', 'Invoice number': 'INV-001', 'Invoice date': '2025-06-01' });
+    const invoice2 = makeInvoice({ id: 'inv-2', 'Invoice number': 'INV-002', 'Invoice date': '2025-06-02' });
     const result = duplicateTrackingRule(invoice1, makeShipment(), ctx({ allInvoices: [invoice1, invoice2] }));
+    expect(result).not.toBeNull();
+    expect(result!.ruleCode).toBe('DUPLICATE_TRACKING');
+    expect(result!.notes).toContain('INV-002');
+  });
+
+  it('does not flag when no shared PRO/tracking between invoices', () => {
+    const invoice1 = makeInvoice({ id: 'inv-1', 'Invoice number': 'INV-001', 'Shipment': ['ship-1'] });
+    const invoice2 = makeInvoice({ id: 'inv-2', 'Invoice number': 'INV-002', 'Shipment': ['ship-2'] });
+    const shipment1 = makeShipment({ id: 'ship-1', 'PRO number': 'PRO-A', 'Tracking number': 'TRK-A' });
+    const shipment2 = makeShipment({ id: 'ship-2', 'PRO number': 'PRO-B', 'Tracking number': 'TRK-B' });
+    const result = duplicateTrackingRule(invoice1, shipment1, ctx({
+      allInvoices: [invoice1, invoice2],
+      allShipments: [shipment1, shipment2],
+    }));
     expect(result).toBeNull();
   });
 });

@@ -47,6 +47,9 @@ Readiness Assessment.
 | [`04-backtest.md`](04-backtest.md) | Evaluator contract, gap analysis, `policy_backtest_runs/results`, effective-dated ruleset selection. | Building/changing the backtest |
 | [`05-readiness.md`](05-readiness.md) | Gateway Readiness Assessment output + the client-facing Compliance Intelligence Package. | Building reports/deliverables |
 | [`06-schema.md`](06-schema.md) | All 11 policy/insurance/gateway tables. Moved here from `data-layer.md`. | Touching policy schema/migrations |
+| [`07-schema-evolution.md`](07-schema-evolution.md) | **Taxonomy Discovery / Cross-Tenant Learning** (planning): how novel (L3) policy variables are captured suggest-only and promoted; capture-vs-enforce; no runtime DDL. | Designing the "learn a new variable" / network-effect feature |
+| [`08-gateway.md`](08-gateway.md) | **The Aurelian Gateway** (planning): the operationalize/runtime service that wraps the evaluator — precheck contract, shadow-first rollout, topology, risk-tiered fail-closed, forensic decision log. | Building the pre-shipment gateway middleware |
+| [`09-analyst-decision-support.md`](09-analyst-decision-support.md) | **Analyst decision support** (planning): operating model for a domain-novice founder-analyst — transcription vs judgment, three-lane confidence×grounding routing, borrowed/encoded authority, backtest-as-evidence, clients-1–5 playbook, viability verdict. | Founder/analyst decisions; go-to-market for the first clients |
 
 ## Console routes (staff-only)
 
@@ -70,6 +73,12 @@ clients never author their own rules. See [`01-ingestion.md`](01-ingestion.md#tr
 9. Policy intelligence is **structured data**, not notes-only text.
 10. Policy activation is **human-reviewed**: extraction suggests; staff confirm before
     a rule is active for backtests, readiness, or future enforcement.
+
+## Architecture decisions
+
+- [ADR 0001](../adr/0001-backtest-shipment-context-model.md) — shipment-spine backtest context.
+- [ADR 0002](../adr/0002-extraction-service-language-boundary.md) — extraction stays TS until volume justifies Python.
+- [ADR 0003](../adr/0003-retrieval-and-llm-boundary.md) — **RAG/LLM boundary**: deterministic detection only; no flat-file rule store; retrieval is document-scoped/tenant-isolated/suggest-only; LLM narrates findings, never detects.
 
 ## Implementation status
 

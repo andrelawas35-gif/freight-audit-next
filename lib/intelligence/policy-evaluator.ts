@@ -31,7 +31,7 @@ export const POLICY_TYPES = [
 export type PolicyType = typeof POLICY_TYPES[number];
 
 /** Policy lifecycle states. */
-export const POLICY_STATUSES = ['draft', 'active', 'archived'] as const;
+export const POLICY_STATUSES = ['draft', 'client_attested', 'active', 'archived'] as const;
 export type PolicyStatus = typeof POLICY_STATUSES[number];
 
 /** Document extraction pipeline states. */
@@ -88,6 +88,10 @@ export type PolicyCondition = {
   documentationRequired?: string[];
   /** Package type is in this list */
   packageTypeIn?: string[];
+  /** Temperature control is required (cold chain, perishable, pharma) */
+  temperatureControlRequired?: boolean;
+  /** Maximum temperature allowed (e.g., 40°F for pharma cold chain) */
+  temperatureMax?: number;
 };
 
 /** THEN action for a matched rule. Decision is validated against GATEWAY_ACTIONS. */
@@ -126,6 +130,10 @@ export type ShipmentPolicyContext = {
   preventableLoss?: number | null;
   /** Aggregated uninsured exposure from linked insurance findings */
   uninsuredExposure?: number | null;
+  /** Whether a temperature-controlled service was selected (cold chain) */
+  temperatureServiceSelected?: boolean | null;
+  /** Ambient temperature at time of shipment (°F), if tracked */
+  temperature?: number | null;
 };
 
 /** A policy rule ready for evaluation (DB row joined + parsed). */
@@ -242,6 +250,14 @@ export function matchesCondition(context: ShipmentPolicyContext, condition: Poli
   }
   if (condition.packageTypeIn?.length) {
     checks.push(inList(context.packageType, condition.packageTypeIn));
+  }
+  if (condition.temperatureControlRequired) {
+    // Rule fires when temp control is required but shipment lacks it (null → fail closed)
+    checks.push(context.temperatureServiceSelected !== true);
+  }
+  if (condition.temperatureMax !== undefined) {
+    // num(null) = 0 → 0 > max is false → safe without explicit null guard
+    checks.push(num(context.temperature) > condition.temperatureMax);
   }
 
   return checks.length > 0 && checks.every(Boolean);

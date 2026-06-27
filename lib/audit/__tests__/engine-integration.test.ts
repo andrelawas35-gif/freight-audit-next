@@ -23,7 +23,7 @@ const {
   batchCreateMock: vi.fn(),
 }));
 
-vi.mock('@/lib/airtable', () => ({
+vi.mock('@/lib/db/records', () => ({
   fetchAllRecords: fetchAllRecordsMock,
   fetchRecordsByIds: fetchRecordsByIdsMock,
   fetchRecordsByLinkedIds: fetchRecordsByLinkedIdsMock,

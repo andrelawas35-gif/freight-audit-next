@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState, useTransition } from 'react';
-import { addRule, editRule, removeRule, type SaveResult } from '@/app/(console)/rulebook/actions';
+import { addRule, editRule, removeRule, type SaveResult } from '@/app/(console)/console/rulebook/actions';
 import { RULE_KEYS } from '@/lib/audit/rule-keys';
 
 type Opt = { id: string; name: string };

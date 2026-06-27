@@ -6,7 +6,7 @@
 
 import { AuthError } from 'next-auth';
 import { signIn } from '@/auth';
-import { createRecord } from '@/lib/airtable';
+import { createRecord } from '@/lib/db/records';
 import { getUserByEmail, createUser } from '@/lib/users';
 
 export type FormState = { error?: string } | undefined;

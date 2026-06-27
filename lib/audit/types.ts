@@ -32,6 +32,7 @@ export type Finding = {
 // (contract → carrier → global); `allInvoices` is used by duplicate detection.
 export type RuleContext = {
   allInvoices: Invoice[];
+  allShipments?: Shipment[];
   resolver: Resolver;
 };
 

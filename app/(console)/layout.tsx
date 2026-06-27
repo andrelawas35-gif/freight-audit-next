@@ -9,7 +9,7 @@ import type { ComponentType } from 'react';
 import { Sidebar } from '@/components/sidebar';
 import { Topbar } from '@/components/topbar';
 import GlobalStatBar from '@/components/global-stat-bar';
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 
 type SidebarProps = {
   searchAudits: any[];

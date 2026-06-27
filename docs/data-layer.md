@@ -20,11 +20,11 @@ Full isolation design: [`data-protection.md`](data-protection.md). Frozen contra
 
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
-| `"Invoices"` | `id`, `"Invoice number"`, `"Amount billed"`, `"Status"`, `"Invoice date"`, `"Carrier"`, `"Shipment"` text[], `"Clients"` text[], `created_at` | Carrier billed side |
+| `"Invoices"` | `id`, `"Invoice number"`, `"Amount billed"`, `"Status"`, `"Invoice date"`, `"Carrier"`, `"Shipment"` text[], `"Clients"` text[], `client_id`, `created_at` | Carrier billed side. `client_id` being migrated from `"Clients"` text[] to scalar (ADR 0006). |
 | `"Invoice Lines"` | `id` | Referenced in types, not heavily used yet |
 | `"Shipments"` | `id`, `"PRO number"`, `"Tracking number"`, `"Actual L/W/H"`, `"Actual weight lbs"`, `"Ship date"`, `"Delivery date"`, `"Service level"`, `"Carrier"`, `"Destination zip"`, `"Address classification"` | Client expected side |
-| `"Audit Results"` | `id`, `"Invoice"` text[], `"Outcome"`, `"Billed amount"`, `"Expected amount"`, `"Variance"`, `"Notes"`, `"Audited at"`, `"Detected by"`, `"Disputes"` text[], `"Review status"`, `"Client"` text[], `"Carrier SCAC"`, `"Invoice number"` | Findings queue source of truth. `"Client"` is a **text[]** (verified against DB 2026-06-26), not scalar — tenancy policies must use array membership. |
-| `"Disputes"` | `id`, `"Dispute ID"`, `"Invoice"` text[], `"Audit result"` text[], `"Status"`, `"Disputed amount"`, `"Recovery amount"`, dates, `"Resolution notes"`, `"Carrier (display)"`, `"Tracking number"`, `"Client"` text[] | Recovery workflow |
+| `"Audit Results"` | `id`, `"Invoice"` text[], `"Outcome"`, `"Billed amount"`, `"Expected amount"`, `"Variance"`, `"Notes"`, `"Audited at"`, `"Detected by"`, `"Disputes"` text[], `"Review status"`, `"Client"` text[], `"Carrier SCAC"`, `"Invoice number"`, `client_id`, `shipment_id` | Findings queue source of truth. `client_id` + `shipment_id` are new scalar columns (ADR 0006 + Q1). `"Client"` text[] being migrated to scalar. |
+| `"Disputes"` | `id`, `"Dispute ID"`, `"Invoice"` text[], `"Audit result"` text[], `"Status"`, `"Disputed amount"`, `"Recovery amount"`, dates, `"Resolution notes"`, `"Carrier (display)"`, `"Tracking number"`, `"Client"` text[], `client_id` | Recovery workflow. `client_id` being migrated from `"Client"` text[] to scalar (ADR 0006). `"Status"` is now CHECK-constrained per ADR 0005 dispute state machine. |
 | `"Clients"` | `id`, `"Company name"`, `"Contract active"`, `"Gain share pct"`, `"Min invoice threshold"`, `"Last audit run"` | Client master |
 | `"Carriers"` | `id`, `"Carrier name"`, `"SCAC"`, `"Contact email"`, SFTP config columns | Carrier master and SFTP config |
 | `"SLA Guarantees"`, `"Carrier Codes"`, `"Audit Rules"`, `"Charge Types"`, `"DAS Zip Codes"` | Various | Listed in `TableName`; not all are actively queried |
@@ -98,7 +98,7 @@ Current intelligence migration:
 
 ## Index Guidance
 
-- GIN indexes on linked arrays such as `"Invoices"."Clients"`, `"Audit Results"."Invoice"`, and `"Audit Results"."Client"`.
+- B-tree indexes on scalar `client_id` replacing GIN on array tenancy columns (ADR 0006).
 - Composite indexes for staged 3PL scans: `(audit_status, client_id, invoice_cycle, id)`.
 - Gateway/reporting additions should index client, month/date, preventability, category, carrier, and audit result lineage.
 

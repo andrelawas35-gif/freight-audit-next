@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translateFormula, splitTopLevel, quoteIdent } from '../airtable';
+import { translateFormula, splitTopLevel, quoteIdent } from '../db/records';
 
 // ═══════════════════════════════════════════════════════════════
 // splitTopLevel
@@ -103,8 +103,9 @@ describe('translateFormula — RECORD_ID()', () => {
 
 // ═══════════════════════════════════════════════════════════════
 // translateFormula — FIND / ARRAYJOIN (linked-record membership)
+// Backward compat: FIND/ARRAYJOIN still works for legacy array columns
 // ═══════════════════════════════════════════════════════════════
-describe('translateFormula — FIND/ARRAYJOIN', () => {
+describe('translateFormula — FIND/ARRAYJOIN (backward compat)', () => {
   it('translates FIND("id", ARRAYJOIN({Link}))', () => {
     const params: unknown[] = [];
     const sql = translateFormula('FIND("rec123", ARRAYJOIN({Clients}))', params);
@@ -124,6 +125,32 @@ describe('translateFormula — FIND/ARRAYJOIN', () => {
     const sql = translateFormula('FIND("c1", ARRAYJOIN({Audit result}))', params);
     expect(sql).toBe('$1 = ANY("Audit result")');
     expect(params).toEqual(['c1']);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// translateFormula — scalar client_id mapping (ADR 0006)
+// ═══════════════════════════════════════════════════════════════
+describe('translateFormula — scalar client_id', () => {
+  it('maps {Client} = "id" to client_id column', () => {
+    const params: unknown[] = [];
+    const sql = translateFormula('{Client} = "rec123"', params);
+    expect(sql).toBe('"client_id" = $1');
+    expect(params).toEqual(['rec123']);
+  });
+
+  it('maps {Clients} = "id" to client_id column', () => {
+    const params: unknown[] = [];
+    const sql = translateFormula('{Clients} = "rec456"', params);
+    expect(sql).toBe('"client_id" = $1');
+    expect(params).toEqual(['rec456']);
+  });
+
+  it('does not map other fields', () => {
+    const params: unknown[] = [];
+    const sql = translateFormula('{Status} = "Open"', params);
+    expect(sql).toBe('"Status" = $1');
+    expect(params).toEqual(['Open']);
   });
 });
 
@@ -155,7 +182,7 @@ describe('translateFormula — logical operators', () => {
     expect(params).toEqual(['UPSN', 'Open', 'Pending']);
   });
 
-  it('handles OR with FIND inside', () => {
+  it('handles OR with FIND inside (backward compat)', () => {
     const params: unknown[] = [];
     const sql = translateFormula(
       'OR(FIND("c1", ARRAYJOIN({Clients})), FIND("c2", ARRAYJOIN({Clients})))',

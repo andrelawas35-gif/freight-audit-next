@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState, useCallback } from 'react';
-import { triggerAudit, type EnqueueResult } from '@/app/(console)/engine/actions';
+import { triggerAudit, type EnqueueResult } from '@/app/(console)/console/engine/actions';
 import { fmtUSD } from '@/lib/format';
 
 type ClientOption = { id: string; name: string };

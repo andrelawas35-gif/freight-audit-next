@@ -37,6 +37,16 @@ export const GATEWAY_CATEGORIES = [
 
 export type GatewayCategory = typeof GATEWAY_CATEGORIES[number];
 
+/** Code mapping lifecycle statuses for ingestion_exceptions (Q11 grilling). */
+export const CODE_MAPPING_STATUSES = [
+  'open',            // Unmapped, not yet reviewed
+  'ai_proposed',     // Data clerk AI has suggested a mapping
+  'human_confirmed', // Analyst has confirmed the AI proposal
+  'learned',         // Confirmed mapping written to learned_mappings, exception resolved
+] as const;
+
+export type CodeMappingStatus = typeof CODE_MAPPING_STATUSES[number];
+
 /** Source of a gateway tag: rule default, human-confirmed, or AI-proposed. */
 export const GATEWAY_SIGNAL_SOURCES = [
   'RULE_DEFAULT',

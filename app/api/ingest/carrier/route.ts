@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { normalizeFromFedexApi } from '@/lib/ingestion/carriers/fedex-api';
 import { normalizeFromUpsApi }   from '@/lib/ingestion/carriers/ups-api';
 import { stageInvoice }          from '@/lib/ingestion/normalize';
+import { startBatch, finishBatch, trackRecord } from '@/lib/ingestion/lineage';
 import { withObservability }     from '@/lib/api-handler';
 
 const bodySchema = z.object({
@@ -37,11 +38,24 @@ export const POST = withObservability('ingest/carrier', async (req, { log }) => 
   }
   const { carrier, invoice } = parsed.data;
 
-  const normalized = carrier === 'fedex'
-    ? normalizeFromFedexApi(invoice as any)
-    : normalizeFromUpsApi(invoice as any);
+  const batchId = await startBatch('API', {
+    carrierScac: carrier.toUpperCase(),
+    fileName: `carrier-api/${carrier}`,
+  });
 
-  const invoiceId = await stageInvoice(normalized);
-  log.info('invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, carrier });
-  return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber });
+  try {
+    const normalized = carrier === 'fedex'
+      ? normalizeFromFedexApi(invoice as any)
+      : normalizeFromUpsApi(invoice as any);
+
+    const invoiceId = await stageInvoice(normalized);
+    await trackRecord(batchId, invoice, 'invoice', invoiceId);
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 1, errorCount: 0 });
+
+    log.info('invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, carrier, batchId });
+    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, batchId });
+  } catch (err: any) {
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 0, errorCount: 1 });
+    throw err;
+  }
 });

@@ -112,7 +112,9 @@ analyst confirm/reject to tune the escalation threshold.
 ### Tooling and the language boundary
 
 - **Parsing:** LlamaParse (the hosted PDF→structured API), not LlamaIndex-the-framework —
-  there is no RAG/index requirement here, only parse + extract.
+  there is no RAG/index requirement here, only parse + extract. The full RAG/LLM boundary
+  (deterministic detection; retrieval only over documents; LLM narrates, never detects) is
+  [ADR 0003](../adr/0003-retrieval-and-llm-boundary.md).
 - **Orchestration:** prefer a plain function chain over a graph framework. Reach for
   LangGraph **only** if you need cyclic self-correction (extractor ↔ critic) or
   mid-graph human interrupts, and **only** over extraction — never over the gap analysis,

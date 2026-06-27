@@ -13,7 +13,7 @@ import {
   fetchRecordsByLinkedIds,
   updateRecord,
   batchCreate,
-} from '@/lib/airtable';
+} from '@/lib/db/records';
 import type { Invoice, Shipment } from '@/lib/types';
 import type { Finding } from './types';
 import { loadRulebook, createResolver } from './rulebook';
@@ -50,7 +50,7 @@ export async function runAudit(options: {
 
   // 1. Fetch invoices (filter by client if provided)
   const invoiceFilter = clientId
-    ? `FIND("${clientId}", ARRAYJOIN({Clients}))`
+    ? `{Clients} = "${clientId}"`
     : '';
 
   const invoices = (await fetchAllRecords('Invoices', {

@@ -1,10 +1,11 @@
 # Build Plan — Multi-Agent Execution (planning)
 
-> **STATUS: PLANNING (2026-06-26).** Execution plan synthesizing the design docs
-> (`data-protection.md`, `policy-intelligence/0[1-9]-*.md`, `adr/000[1-3]`) and the
-> grilling sessions into a sequenced, single-writer-per-file agent plan. **LOCKED** =
-> settled; **OPEN** = being resolved. This doc is the Controller's spec; each agent's
-> context is its *owned module doc*, not this whole file.
+> **STATUS: EXECUTED (2026-06-26).** All 4 phases complete. E1 Keystone (contract freeze,
+> migration 0006), E2 Backtest (8 correctness fixes, migration 0007), E3 Gateway (Next.js
+> API route `/v1/precheck`, ADR 0004 refactor from Fastify), E4 Policy UI (attestation, scope
+> statement, guarantee). E5 Launch Readiness shipped alongside. E6 Extraction deferred.
+> All 295 tests pass, TypeScript clean.
+> See `../CHANGELOG.md` for full implementation details.
 
 ## Framing (what this adapts and what it rejects)
 
@@ -37,7 +38,7 @@ is the Controller's deployment roster (adds E5 Launch Readiness + E6 Extraction)
 |---|---|---|---|
 | **A0/E1 · Platform/Keystone** | E1 | `db/schema.ts`, `db/migrations/**`, `lib/db.ts`, `lib/intelligence/taxonomy.ts`, **`lib/intelligence/policy-evaluator.ts`** (types + `matchesCondition`), tenancy/RLS (`getTenantSql`, restricted role) | 0 |
 | **A1/E2 · Intelligence/Backtest** | E2 | `lib/intelligence/policy-service.ts`, `lib/intelligence/reports.ts` | 1 (critical path) |
-| **A2/E3 · Gateway** | E3 | new `services/gateway/**` (Fastify pkg, in-repo; imports `lib/intelligence` read-only) | 1 (parallel) |
+| **A2/E3 · Gateway** | E3 | ~~new `services/gateway/**`~~ (Fastify) → Next.js API route `/v1/precheck` (ADR 0004; imports `lib/intelligence` read-only) | 1 (parallel) |
 | **A3/E4 · Policy UI/Attestation** | E4 | `app/(console)/policies/**` | 2 (trails A0) |
 | **— / E5 · Launch Readiness** | E5 | `app/(console)/disputes/actions.ts`, `app/(console)/queue/actions.ts`, `app/(console)/rulebook/actions.ts`, new test files, count components | 0–1 (∥ E1) |
 | **— / E6 · Extraction/Taxonomy** | E6 | new `lib/intelligence/extraction/**` | DEFERRED |
@@ -158,8 +159,8 @@ _(all resolved)_
               critical path  │  (bg)     │  trails   │
             ┌────────────────▼┐ ┌────────▼────────┐ ┌▼──────────────────┐
             │ A1 · INTELLIGENCE│ │ A2 · GATEWAY    │ │ A3 · POLICY UI /  │
-            │   /BACKTEST      │ │ services/gateway│ │   ATTESTATION     │
-            │ fix loadBacktest │ │ (new Fastify)   │ │ app/(console)/    │
+            │   /BACKTEST      │ │ /v1/precheck   │ │   ATTESTATION     │
+            │ fix loadBacktest │ │ (Next.js route) │ │ app/(console)/    │
             │ Contexts (rev    │ │ imports         │ │ policies/**       │
             │ gate, DP1)       │ │ evaluator R/O   │ │ DG1 attest flow   │
             └──────────────────┘ └─────────────────┘ └───────────────────┘
@@ -202,7 +203,7 @@ PHASE 1  [parallel, weighted]
   A1 (FOREGROUND, critical path): fix loadBacktestContexts — shipment spine, keyset
       pagination, dedup, tri-valued, ship-date ruleset. Oracle: re-run stable + complete
       + axis-crossing jewelry rule fires. → unblocks paid Ghost Audit (revenue).
-  A2 (BACKGROUND, parallel): scaffold services/gateway (Fastify, /v1/precheck, snapshot
+  A2 (BACKGROUND, parallel): Next.js API route `/v1/precheck` calling `evaluatePolicyContext()` in `mode:'pre_shipment'`
       cache, API keys). Isolated — touches no existing file. Phase-2 revenue → trails.
 
 PHASE 2  [trailing]
@@ -265,7 +266,7 @@ correctness, governance, gateway, taxonomy discovery.
 | **C — Controller** | Freeze contracts, route Change Requests, review-via-oracle, merge in dep order | all | — |
 | **E1 — Keystone/Platform** | Schema + migrations + tenancy/RLS + freeze the contract | 0 (blocking) | — |
 | **E2 — Intelligence/Backtest** | Fix backtest correctness (the revenue gate) | 1 (foreground) | ∥ E3 deemed-OK |
-| **E3 — Gateway** | New Fastify precheck service (shadow-first) | 1 (background) | ∥ E2 deemed-OK |
+| **E3 — Gateway** | ~~New Fastify precheck service~~ Next.js API route `/v1/precheck` calling `evaluatePolicyContext()` in `mode:'pre_shipment'` (ADR 0004) | 1 (background) | ∥ E2 deemed-OK |
 | **E4 — Policy UI & Attestation** | Attestation flow + scope statement + MVP UI gaps | 2 (trailing) | — (needs E1+E2) |
 | **E5 — Launch Readiness & Hardening** | Server-action validation + tests + UI counts | 0–1 | ∥ E1 deemed-OK |
 | **E6 — Extraction & Taxonomy Discovery** | AI extractor + taxonomy candidates | DEFERRED | — |
@@ -293,9 +294,9 @@ eval (pass/fail/unknown → 3-bucket Ghost Audit, `09` DP5); (6) effective-dated
 `"Ship date"`. **Oracle:** re-run = stable + complete; an axis-crossing jewelry rule fires.
 
 ### E3 — Gateway  *(Phase 1 background → Phase 2 enforcement)*
-**Owns code:** new `services/gateway/**`. **Owns docs:** `08-gateway.md`. **Reads:**
+**Owns code:** ~~new `services/gateway/**`~~ → Next.js API route `app/api/v1/precheck/route.ts` (ADR 0004). **Owns docs:** `08-gateway.md`. **Reads:**
 `data-protection.md`, `observability.md`, `CONTRACTS.md`, `policy-evaluator.ts` (R).
-**Tasks (BACKLOG "Aurelian Gateway V1"):** Fastify `/v1/precheck` (Zod = `ShipmentPolicyContext`) +
+**Tasks (BACKLOG "Aurelian Gateway V1"):** ~~Fastify~~ Next.js API route `/v1/precheck` (Zod = `ShipmentPolicyContext`) +
 WMS adapter + generic fallback; warm versioned snapshot cache (effective-dated, TTL invalidation);
 always-200 contract (`decision/enforced/approval_token/violations/rulesetVersion/correlationId`);
 per-client+per-rule mode (shadow→approval→block); risk-tiered failure (fail-open default,

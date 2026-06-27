@@ -203,9 +203,9 @@ All policies use `text` comparisons, never `::uuid`.
 
 | Table | Tenancy Column | Policy Form | FORCE RLS |
 |-------|---------------|-------------|-----------|
-| `"Invoices"` | `"Clients" text[]` | `current_setting('app.current_tenant', true) = ANY("Clients")` | ✓ |
-| `"Audit Results"` | `"Client" text[]` | `current_setting('app.current_tenant', true) = ANY("Client")` | ✓ |
-| `"Disputes"` | `"Client" text[]` | `current_setting('app.current_tenant', true) = ANY("Client")` | ✓ |
+| `"Invoices"` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
+| `"Audit Results"` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
+| `"Disputes"` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
 | `client_insurance_policies` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
 | `insurance_policy_rules` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
 | `policy_rules` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
@@ -213,7 +213,7 @@ All policies use `text` comparisons, never `::uuid`.
 | `client_policies` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
 | `gateway_decisions` | `client_id text` | `client_id = current_setting('app.current_tenant', true)` | ✓ |
 
-**CHECK constraints** on array-tenancy tables enforce `cardinality = 1`.
+**CHECK constraints** enforce `client_id IS NOT NULL` on business tables (ADR 0006).
 
 ## 5. Connection Pattern (`lib/db.ts`)
 
@@ -235,7 +235,23 @@ The restricted `app_tenant` role is **not the table owner** — RLS applies.
 | 1 — Aggregated | Cross-tenant, k≥5 | Audited analytics path | Benchmarks, win-rates |
 | 2 — Raw tenant | Never leaves namespace | `getTenantSql()` | Invoices, disputes, policy_rules, gateway_decisions |
 
-## 7. Related
+## 7. Gateway Deployment Contract (ADR 0004)
+
+The Gateway is NOT a separate Fastify service. It is a **mode** of the existing evaluator:
+- `POST /v1/precheck` is a **Next.js API route** in the same app, calling `evaluatePolicyContext()` with `mode: 'pre_shipment'`.
+- No new runtime, no separate `services/gateway/` deployment. The existing `services/gateway/` Fastify code is superseded by this ADR.
+- All Gateway-specific contracts (always-200, shadow-first, per-client API keys, `gateway_decisions` log) remain intact — only the deployment target changes.
+
+## 8. Scalar `client_id` Freeze (ADR 0006)
+
+Array tenancy (`text[]`) on business tables is frozen for removal:
+- `"Invoices"."Clients"` → scalar `client_id`
+- `"Audit Results"."Client"` → scalar `client_id`
+- `"Disputes"."Client"` → scalar `client_id`
+- RLS policies use `client_id = current_setting(...)`. Array columns coexist for backward compat.
+- No new array tenancy columns. All future business tables use scalar `client_id`.
+
+## 9. Related
 
 - `docs/data-protection.md` — Full isolation design, threat model, D1–D5.
 - `docs/policy-intelligence/06-schema.md` — All 11 policy/insurance/gateway tables.

@@ -33,9 +33,9 @@ try {
 // ── Policy existence tests (parse the migration SQL) ────────────────
 
 const PHASE_1_TABLES = [
-  { table: '"Invoices"',                tenancy: 'array',  column: '"Clients"' },
-  { table: '"Audit Results"',           tenancy: 'array',  column: '"Client"' },
-  { table: '"Disputes"',                tenancy: 'array',  column: '"Client"' },
+  { table: '"Invoices"',                tenancy: 'scalar', column: 'client_id' },
+  { table: '"Audit Results"',           tenancy: 'scalar', column: 'client_id' },
+  { table: '"Disputes"',                tenancy: 'scalar', column: 'client_id' },
   { table: 'client_insurance_policies', tenancy: 'scalar', column: 'client_id' },
   { table: 'insurance_policy_rules',    tenancy: 'scalar', column: 'client_id' },
   { table: 'policy_rules',              tenancy: 'scalar', column: 'client_id' },
@@ -50,7 +50,7 @@ describe('RLS Policy Definitions (migration parse)', () => {
     expect(migrationSql.length).toBeGreaterThan(100);
   });
 
-  for (const { table, tenancy } of PHASE_1_TABLES) {
+  for (const { table } of PHASE_1_TABLES) {
     it(`${table} has RLS ENABLED`, () => {
       const pattern = new RegExp(
         `ALTER\\s+TABLE\\s+${table.replace(/"/g, '"?')}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`,
@@ -72,28 +72,14 @@ describe('RLS Policy Definitions (migration parse)', () => {
       expect(migrationSql).toContain(`tenant_isolation_${policyName}`);
     });
 
-    if (tenancy === 'array') {
-      it(`${table} uses array-membership RLS (ANY)`, () => {
-        // Split on CREATE POLICY (not DROP POLICY) to get the USING clause
-        const policyName = `tenant_isolation_${table.replace(/"/g, '').replace(/\s+/g, '_').toLowerCase()}`;
-        const parts = migrationSql.split(`CREATE POLICY ${policyName}`);
-        const section = parts.length > 1 ? parts[1] : '';
-        if (section) {
-          expect(section).toMatch(/ANY\s*\(/i);
-        }
-      });
-    }
-
-    if (tenancy === 'scalar') {
-      it(`${table} uses scalar client_id RLS`, () => {
-        const policyName = `tenant_isolation_${table.replace(/"/g, '').replace(/\s+/g, '_').toLowerCase()}`;
-        const parts = migrationSql.split(`CREATE POLICY ${policyName}`);
-        const section = parts.length > 1 ? parts[1] : '';
-        if (section) {
-          expect(section).toContain('client_id = current_setting');
-        }
-      });
-    }
+    it(`${table} uses scalar client_id RLS`, () => {
+      const policyName = `tenant_isolation_${table.replace(/"/g, '').replace(/\s+/g, '_').toLowerCase()}`;
+      const parts = migrationSql.split(`CREATE POLICY ${policyName}`);
+      const section = parts.length > 1 ? parts[1] : '';
+      if (section) {
+        expect(section).toContain('client_id = current_setting');
+      }
+    });
   }
 
   it('all RLS comparisons use text, never ::uuid', () => {
@@ -164,7 +150,7 @@ describe('RLS Behavioral Contract (for integration tests)', () => {
   it('CONTRACT: tenant A cannot see tenant B rows', () => {
     // Given: connected as app_tenant, SET app.current_tenant = 'client-a'
     // When:  SELECT * FROM "Invoices"
-    // Then:  all returned rows have 'client-a' = ANY("Clients")
+    // Then:  all returned rows have client_id = 'client-a'
     //        and NO row has ONLY 'client-b' in "Clients"
     //
     // Given: same connection
@@ -177,7 +163,7 @@ describe('RLS Behavioral Contract (for integration tests)', () => {
   it('CONTRACT: tenant B cannot see tenant A rows', () => {
     // Given: connected as app_tenant, SET app.current_tenant = 'client-b'
     // When:  SELECT * FROM "Audit Results"
-    // Then:  all returned rows have 'client-b' = ANY("Client")
+    // Then:  all returned rows have client_id = 'client-b'
     //        and NO row has ONLY 'client-a' in "Client"
     expect(true).toBe(true); // Contract documented — promote to live test
   });

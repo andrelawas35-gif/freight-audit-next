@@ -17,6 +17,7 @@ import { normalizeEdi210 } from '@/lib/ingestion/carriers/from-edi';
 import { stageInvoice } from '@/lib/ingestion/normalize';
 import { loadLearnedMappings, createMappingContext, persistExceptions } from '@/lib/ingestion/mappings';
 import { annotateOpenExceptions } from '@/lib/ingestion/data-clerk';
+import { startBatch, finishBatch, trackRecord } from '@/lib/ingestion/lineage';
 import { withObservability } from '@/lib/api-handler';
 
 const bodySchema = z.object({
@@ -40,13 +41,23 @@ export const POST = withObservability('ingest/edi', async (req, { log }) => {
   }
   const rawEdi = validated.data.raw;
 
-  const ctx        = createMappingContext(await loadLearnedMappings(), 'edi');
-  const parsed     = parseEdi210(rawEdi);
-  const normalized = normalizeEdi210(parsed, ctx);
-  const invoiceId  = await stageInvoice(normalized);
-  const newExceptions = await persistExceptions(ctx.exceptions);
-  if (newExceptions > 0) await annotateOpenExceptions();
+  const batchId = await startBatch('API', { fileName: 'edi/210' });
 
-  log.info('EDI invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
-  return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions });
+  try {
+    const ctx        = createMappingContext(await loadLearnedMappings(), 'edi');
+    const parsed     = parseEdi210(rawEdi);
+    const normalized = normalizeEdi210(parsed, ctx);
+    const invoiceId  = await stageInvoice(normalized);
+    await trackRecord(batchId, rawEdi, 'invoice', invoiceId);
+
+    const newExceptions = await persistExceptions(ctx.exceptions);
+    if (newExceptions > 0) await annotateOpenExceptions();
+
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 1, errorCount: 0 });
+    log.info('EDI invoice staged', { invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions, batchId });
+    return NextResponse.json({ ok: true, invoiceId, invoiceNumber: normalized.invoiceNumber, newExceptions, batchId });
+  } catch (err: any) {
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 0, errorCount: 1 });
+    throw err;
+  }
 });

@@ -3,7 +3,8 @@
 import { useActionState, useState, useTransition } from 'react';
 import {
   changeRole, changeClient, inviteClient, type InviteResult,
-} from '@/app/(console)/users/actions';
+} from '@/app/(console)/console/users/actions';
+import { TableFooter } from '@/components/ui/primitives';
 
 type ClientOption = { id: string; name: string };
 type AdminUser = {
@@ -74,8 +75,8 @@ export function InviteClient({ clients }: { clients: ClientOption[] }) {
 }
 
 // ── Users table ──────────────────────────────────────────────
-export function UsersTable({ users, clients, currentUserId }: {
-  users: AdminUser[]; clients: ClientOption[]; currentUserId: string;
+export function UsersTable({ users, clients, currentUserId, hasMoreUsers = false }: {
+  users: AdminUser[]; clients: ClientOption[]; currentUserId: string; hasMoreUsers?: boolean;
 }) {
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -100,6 +101,7 @@ export function UsersTable({ users, clients, currentUserId }: {
           )}
         </tbody>
       </table>
+      <TableFooter showing={users.length} total={users.length} label="users" hasMore={hasMoreUsers} />
     </div>
   );
 }

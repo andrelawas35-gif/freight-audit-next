@@ -21,9 +21,9 @@ import { fmtUSD, fmtDate, fmtDateFull, STAGES } from '@/lib/format';
 import {
   RuleTag, ruleName, StagePill, DeadlineChip, CarrierMark,
   Btn, Glyph, Segmented, FilterChip, FilterPopover, AuditTrail,
-  type TrailEvent,
+  TableFooter, type TrailEvent,
 } from '@/components/ui/primitives';
-import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/(console)/disputes/actions';
+import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/(console)/console/disputes/actions';
 
 export type DisputeRow = {
   id: string;
@@ -46,7 +46,7 @@ export type DisputeRow = {
   notes: string;
 };
 
-export function DisputesView({ initialRows, loadError }: { initialRows: DisputeRow[]; loadError: string | null }) {
+export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { initialRows: DisputeRow[]; loadError: string | null; hasMoreRows?: boolean }) {
   const [rows, setRows] = useState(initialRows);
   const [stages, setStages] = useState<string[]>([]);
   const [carriers, setCarriers] = useState<string[]>([]);
@@ -181,7 +181,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Couldn't load disputes</div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--hot-ink)' }}>{loadError}</div>
-        <div style={{ fontSize: 12, marginTop: 12 }}>Check your AIRTABLE_PAT and AIRTABLE_BASE_ID in .env.local</div>
+        <div style={{ fontSize: 12, marginTop: 12 }}>Check DATABASE_URL and database connectivity, then reload the page.</div>
       </div>
     );
   }
@@ -275,6 +275,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
           ))}
 
           {flat.length === 0 && <div style={{ padding: 38, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>No disputes match these filters.</div>}
+          <TableFooter showing={filtered.length} total={rows.length} label="disputes" hasMore={hasMoreRows} />
         </div>
 
         {/* DETAIL */}
@@ -487,6 +488,5 @@ function eventForStage(stage: string, date: string): TrailEvent {
     default:          return { kind: 'opened',    date, actor: 'Team', note: stage };
   }
 }
-
 
 

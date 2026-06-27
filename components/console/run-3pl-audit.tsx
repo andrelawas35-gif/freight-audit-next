@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
-import { runThreePLAuditAction, type RunResult } from '@/app/(console)/ingestion/3pl/actions';
+import { runThreePLAuditAction, type RunResult } from '@/app/(console)/console/ingestion/3pl/actions';
 
 const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { normalizeFromShipStation } from '@/lib/ingestion/client/shipstation';
 import { normalizeFromShopify }     from '@/lib/ingestion/client/shopify';
 import { stageClientShipment }      from '@/lib/ingestion/normalize';
+import { startBatch, finishBatch, trackRecord } from '@/lib/ingestion/lineage';
 import { withObservability }        from '@/lib/api-handler';
 
 const bodySchema = z.object({
@@ -41,11 +42,24 @@ export const POST = withObservability('ingest/wms', async (req, { log }) => {
   }
   const { source, clientId, payload } = parsed.data;
 
-  const normalized = source === 'shipstation'
-    ? normalizeFromShipStation(payload as any, clientId)
-    : normalizeFromShopify(payload as any, clientId);
+  const batchId = await startBatch('WEBHOOK', {
+    clientId,
+    fileName: `wms/${source}`,
+  });
 
-  const shipmentId = await stageClientShipment(normalized);
-  log.info('shipment staged', { shipmentId, source, clientId });
-  return NextResponse.json({ ok: true, shipmentId });
+  try {
+    const normalized = source === 'shipstation'
+      ? normalizeFromShipStation(payload as any, clientId)
+      : normalizeFromShopify(payload as any, clientId);
+
+    const shipmentId = await stageClientShipment(normalized);
+    await trackRecord(batchId, payload, 'shipment', shipmentId);
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 1, errorCount: 0 });
+
+    log.info('shipment staged', { shipmentId, source, clientId, batchId });
+    return NextResponse.json({ ok: true, shipmentId, batchId });
+  } catch (err: any) {
+    await finishBatch(batchId, { rowCount: 1, stagedCount: 0, errorCount: 1 });
+    throw err;
+  }
 });

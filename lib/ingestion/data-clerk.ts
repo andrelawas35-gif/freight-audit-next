@@ -13,9 +13,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { STANDARD_ACCESSORIALS } from './accessorial-map';
 import {
-  listExceptions, setExceptionSuggestion, loadLearnedMappings,
+  listExceptions, loadLearnedMappings,
   type MappingType, type LearnedMapping,
 } from './mappings';
+import { proposeMapping } from './code-mapping';
 
 let _client: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -126,7 +127,7 @@ export async function annotateOpenExceptions(limit = 20): Promise<number> {
         examples: learned,
       });
       if (s) {
-        await setExceptionSuggestion(exc.id, s.standardCode, s.reasoning, s.confidence);
+        await proposeMapping(exc.id, s.standardCode, s.reasoning, s.confidence);
         annotated++;
       }
     }

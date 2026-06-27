@@ -48,7 +48,7 @@ export function CommandPalette({ open, onClose, auditResults = [], disputes = []
           group: 'Audit Findings',
           label: `Invoice: ${r['Invoice number'] || '—'}`,
           meta: `${r['Carrier SCAC'] || '—'} · Variance: ${fmtUSD(r['Variance'] || r.recover || 0)}`,
-          action: () => { router.push('/queue'); onClose(); }
+          action: () => { router.push('/console/queue'); onClose(); }
         });
       }
     });
@@ -61,7 +61,7 @@ export function CommandPalette({ open, onClose, auditResults = [], disputes = []
           group: 'Disputes Pipeline',
           label: `Dispute ID: ${d.id.slice(0, 8)} · ${d['Invoice'] || '—'}`,
           meta: `${d['Status'] || 'Open'} · Amount: ${fmtUSD(d['Disputed amount'] || d.amount || 0)}`,
-          action: () => { router.push('/disputes'); onClose(); }
+          action: () => { router.push('/console/disputes'); onClose(); }
         });
       }
     });

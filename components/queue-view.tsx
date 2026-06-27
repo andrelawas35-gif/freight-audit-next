@@ -24,13 +24,13 @@ import { fmtUSD, fmtDate, fmtDateFull, daysUntil } from '@/lib/format';
 import {
   RuleTag, ruleName, StatusEdit, DeadlineChip, CarrierMark, ConfMark,
   Checkbox, Btn, Glyph, Segmented, FilterChip, FilterPopover, Card, KPI, Bars, SectionLabel, StatBar,
-  type Confidence,
+  TableFooter, type Confidence,
 } from '@/components/ui/primitives';
 import { templateFor } from '@/lib/templates';
 import {
   setReviewStatus, dismissFinding, fileDispute,
   fileDisputesBulk, dismissBulk, approveBulk,
-} from '@/app/(console)/queue/actions';
+} from '@/app/(console)/console/queue/actions';
 
 export type QueueRow = {
   id: string;
@@ -57,7 +57,7 @@ const GROUP_LABELS: Record<string, string> = {
 };
 const CONF_ORDER: Record<Confidence, number> = { high: 0, medium: 1, borderline: 2 };
 
-export function QueueView({ initialRows, loadError }: { initialRows: QueueRow[]; loadError: string | null }) {
+export function QueueView({ initialRows, loadError, hasMoreRows = false }: { initialRows: QueueRow[]; loadError: string | null; hasMoreRows?: boolean }) {
   const [rows, setRows] = useState(initialRows);
   const [carriers, setCarriers] = useState<string[]>([]);
   const [rules, setRules] = useState<string[]>([]);
@@ -134,8 +134,8 @@ export function QueueView({ initialRows, loadError }: { initialRows: QueueRow[];
   // ── write actions (optimistic UI + server action) ───────────
   const handleStatusChange = (row: QueueRow, status: QueueRow['status']) => {
     setRows(prev => prev.map(r => r.id === row.id ? { ...r, status } : r));
-    const airtableStatus = { new: 'New', reviewing: 'Reviewing', approved: 'Approved', dismissed: 'Dismissed' }[status];
-    startTransition(() => { setReviewStatus(row.id, airtableStatus); });
+    const reviewStatusValue = { new: 'New', reviewing: 'Reviewing', approved: 'Approved', dismissed: 'Dismissed' }[status];
+    startTransition(() => { setReviewStatus(row.id, reviewStatusValue); });
   };
 
   const handleDismiss = (row: QueueRow) => {
@@ -233,7 +233,7 @@ export function QueueView({ initialRows, loadError }: { initialRows: QueueRow[];
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Couldn't load the queue</div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--hot-ink)' }}>{loadError}</div>
-        <div style={{ fontSize: 12, marginTop: 12 }}>Check your AIRTABLE_PAT and AIRTABLE_BASE_ID in .env.local</div>
+        <div style={{ fontSize: 12, marginTop: 12 }}>Check DATABASE_URL and database connectivity, then reload the page.</div>
       </div>
     );
   }
@@ -334,6 +334,7 @@ export function QueueView({ initialRows, loadError }: { initialRows: QueueRow[];
           ))}
 
           {flat.length === 0 && <div style={{ padding: 38, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>No findings match these filters.</div>}
+          <TableFooter showing={filtered.length} total={rows.length} label="findings" hasMore={hasMoreRows} />
         </div>
 
         {/* RIGHT: detail */}
@@ -452,7 +453,7 @@ function QueueDetail({ r, onAct, onDismiss, onStatusChange, onTemplate }: {
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <RuleTag rule={r.rule} />
-          <StatusEdit status={mapToAirtableStatus(r.status)} onChange={(s) => onStatusChange(r, mapFromAirtableStatus(s))} />
+          <StatusEdit status={mapToStatus(r.status)} onChange={(s) => onStatusChange(r, mapFromStatus(s))} />
           <ConfMark level={r.confidence} />
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginLeft: 'auto' }}>{r.id.slice(0, 10)}</span>
         </div>
@@ -568,7 +569,7 @@ function QueueRowItem({ r, active, checked, onSelect, onClick, onStatusChange }:
       <div>
         {r.deadline
           ? <DeadlineChip iso={r.deadline} />
-          : <StatusEdit status={mapToAirtableStatus(r.status)} onChange={(s) => onStatusChange(mapFromAirtableStatus(s))} />}
+          : <StatusEdit status={mapToStatus(r.status)} onChange={(s) => onStatusChange(mapFromStatus(s))} />}
       </div>
       <span className="mono tnum" style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: dismissed ? 'var(--ink-3)' : 'var(--green-ink)' }}>{fmtUSD(r.recover, true)}</span>
     </div>
@@ -583,10 +584,10 @@ function sortBtnStyle(active: boolean): React.CSSProperties {
   };
 }
 
-// status mapping between the local lowercase status and Airtable's title-case
-function mapToAirtableStatus(s: QueueRow['status']) {
+// status mapping between the local lowercase status and the display title-case
+function mapToStatus(s: QueueRow['status']) {
   return { new: 'New', reviewing: 'Reviewing', approved: 'Approved', dismissed: 'Dismissed' }[s];
 }
-function mapFromAirtableStatus(s: string): QueueRow['status'] {
+function mapFromStatus(s: string): QueueRow['status'] {
   return ({ New: 'new', Reviewing: 'reviewing', Approved: 'approved', Dismissed: 'dismissed' } as Record<string, QueueRow['status']>)[s] || 'new';
 }

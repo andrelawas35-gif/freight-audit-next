@@ -34,7 +34,7 @@ export const authConfig = {
       if (isAuthPage) {
         if (isLoggedIn) {
           return Response.redirect(
-            new URL(role === 'staff' ? '/' : '/portal', nextUrl)
+            new URL(role === 'staff' ? '/console' : '/portal', nextUrl)
           );
         }
         return true;
@@ -45,10 +45,15 @@ export const authConfig = {
       // Portal is open to any authenticated user
       if (pathname.startsWith('/portal')) return true;
 
-      // Everything else is the staff console — staff only
-      if (role !== 'staff') {
-        return Response.redirect(new URL('/portal', nextUrl));
+      // Console is staff only
+      if (pathname.startsWith('/console')) {
+        if (role !== 'staff') {
+          return Response.redirect(new URL('/portal', nextUrl));
+        }
+        return true;
       }
+
+      // Marketing pages + API routes are public
       return true;
     },
     jwt({ token, user }) {

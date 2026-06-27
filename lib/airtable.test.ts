@@ -10,7 +10,7 @@ import {
   fetchAllRecords,
   fetchRecordsByIds,
   fetchRecordsByLinkedIds,
-} from './airtable';
+} from './db/records';
 
 describe('complete record reads', () => {
   beforeEach(() => query.mockReset());

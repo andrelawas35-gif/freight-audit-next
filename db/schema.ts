@@ -38,6 +38,9 @@ const pbrId  = sql`'pbr' || replace(gen_random_uuid()::text, '-', '')`;
 const graId  = sql`'gra' || replace(gen_random_uuid()::text, '-', '')`;
 const gdId   = sql`'gd'  || replace(gen_random_uuid()::text, '-', '')`;
 const ptcId  = sql`'ptc' || replace(gen_random_uuid()::text, '-', '')`;
+const atId   = sql`'at'  || replace(gen_random_uuid()::text, '-', '')`;
+const ibId   = sql`'ib'  || replace(gen_random_uuid()::text, '-', '')`;
+const irId   = sql`'ir'  || replace(gen_random_uuid()::text, '-', '')`;
 
 // ── Business tables (quoted names from Airtable legacy) ──────────
 
@@ -53,10 +56,13 @@ export const invoices = pgTable('Invoices', {
   invoiceDate:     text('Invoice date'),
   paymentDueDate:  text('Payment due date'),
   clients:         text('Clients').array(),
+  clientId:        text('client_id'),
   createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:       timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_invoice_number').on(t.invoiceNumber),
   index('idx_invoice_clients_gin').using('gin', t.clients),
+  index('idx_invoices_client_id').on(t.clientId),
 ]);
 
 export const shipments = pgTable('Shipments', {
@@ -73,6 +79,8 @@ export const shipments = pgTable('Shipments', {
   carrier:               text('Carrier'),
   destinationZip:        text('Destination zip'),
   addressClassification: text('Address classification'),
+  createdAt:             timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:             timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_shipment_pro').on(t.proNumber),
   index('idx_shipment_tracking').on(t.trackingNumber),
@@ -93,6 +101,8 @@ export const auditResults = pgTable('Audit Results', {
   disputes:         text('Disputes').array(),
   reviewStatus:     text('Review status'),
   client:           text('Client').array(),
+  clientId:         text('client_id'),
+  shipmentId:       text('shipment_id'),
   carrierScac:      text('Carrier SCAC'),
   carrierDisplay:   text('Carrier (display)'),
   carrier:          text('Carrier'),
@@ -108,11 +118,15 @@ export const auditResults = pgTable('Audit Results', {
   gatewayEstimatedSavings: numeric('Gateway estimated savings'),
   gatewayConfidence: numeric('Gateway confidence'),
   gatewaySignalSource: text('Gateway signal source'),
+  createdAt:        timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:        timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_audit_outcome').on(t.outcome),
   index('idx_audit_invoice_gin').using('gin', t.invoice),
   index('idx_audit_client_gin').using('gin', t.client),
   index('idx_audit_gateway').on(t.gatewayPreventability, t.gatewayCategory),
+  index('idx_audit_results_client_id').on(t.clientId),
+  index('idx_audit_results_shipment_id').on(t.shipmentId),
 ]);
 
 export const disputes = pgTable('Disputes', {
@@ -121,6 +135,7 @@ export const disputes = pgTable('Disputes', {
   invoice:           text('Invoice').array(),
   auditResult:       text('Audit result').array(),
   client:            text('Client').array(),
+  clientId:          text('client_id'),
   auditRule:         text('Audit rule').array(),
   carrierDisplay:    text('Carrier (display)'),
   carrier:           text('Carrier'),
@@ -135,8 +150,11 @@ export const disputes = pgTable('Disputes', {
   dateResolved:      text('Date resolved'),
   recoveryAmount:    numeric('Recovery amount'),
   resolutionNotes:   text('Resolution notes'),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:         timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_dispute_status').on(t.status),
+  index('idx_disputes_client_id').on(t.clientId),
 ]);
 
 export const clients = pgTable('Clients', {
@@ -146,6 +164,8 @@ export const clients = pgTable('Clients', {
   gainSharePct:        numeric('Gain share pct'),
   minInvoiceThreshold: numeric('Min invoice threshold'),
   lastAuditRun:        text('Last audit run'),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:           timestamp('deleted_at', { withTimezone: true }),
 });
 
 export const carriers = pgTable('Carriers', {
@@ -162,6 +182,8 @@ export const carriers = pgTable('Carriers', {
   sftpArchiveDir: text('sftp_archive_dir'),
   sftpFileFormat: text('sftp_file_format'),
   sftpEnabled:  boolean('sftp_enabled').notNull().default(false),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_carrier_scac').on(t.scac),
 ]);
@@ -219,6 +241,7 @@ export const rulebook = pgTable('rulebook', {
   effectiveTo:   date('effective_to'),
   note:          text('note'),
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
   clauseRef:     text('clause_ref'),
 }, (t) => [
   index('idx_rulebook_key').on(t.ruleKey),
@@ -274,6 +297,47 @@ export const ingestionExceptions = pgTable('ingestion_exceptions', {
     sql`upper(${t.rawCode})`,
     t.status,
   ),
+]);
+
+// ── Ingestion lineage ──────────────────────────────────────────
+// Tracks every intake event so we can trace any staged record back to its source.
+
+export const ingestionBatches = pgTable('ingestion_batches', {
+  id:           text('id').primaryKey().default(ibId),
+  source:       text('source').notNull(),          // SFTP | API | WEBHOOK | CONSOLE_UPLOAD | CONSOLE_PASTE
+  carrierScac:  text('carrier_scac'),
+  clientId:     text('client_id'),
+  fileName:     text('file_name'),                  // original filename or API endpoint
+  fileSize:     integer('file_size'),
+  rowCount:     integer('row_count'),               // raw payload items
+  stagedCount:  integer('staged_count'),            // successfully staged
+  errorCount:   integer('error_count'),             // failed to stage
+  status:       text('status').notNull().default('processing'),  // processing | completed | partial | failed
+  metadata:     jsonb('metadata'),                  // correlation ids, SFTP job id, etc.
+  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deleted_at:   timestamp('deleted_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_ib_created_at').on(t.createdAt),
+  index('idx_ib_source_client').on(t.source, t.clientId, t.createdAt),
+]);
+
+export const ingestionRecords = pgTable('ingestion_records', {
+  id:              text('id').primaryKey().default(irId),
+  batchId:         text('batch_id').notNull().references(() => ingestionBatches.id),
+  rawPayload:      jsonb('raw_payload'),            // the original incoming data
+  normalizedType:  text('normalized_type'),          // invoice | shipment | fulfillment | storage
+  stagedRecordId:  text('staged_record_id'),        // id in Invoices | Shipments | 3PL tables
+  auditResultId:   text('audit_result_id'),         // later audit finding (if any)
+  disputeId:       text('dispute_id'),               // later dispute (if any)
+  status:          text('status').notNull().default('staged'),  // staged | audited | disputed
+  errors:          jsonb('errors'),                  // validation or staging errors
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  deleted_at:      timestamp('deleted_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_ir_batch_id').on(t.batchId, t.createdAt),
+  index('idx_ir_staged').on(t.stagedRecordId),
+  index('idx_ir_audit').on(t.auditResultId),
 ]);
 
 export const disputeOutcomes = pgTable('dispute_outcomes', {
@@ -398,6 +462,25 @@ export const sftpProcessedFiles = pgTable('sftp_processed_files', {
 
 // Gateway readiness and high-value insurance intelligence
 
+// ── Audit trail ─────────────────────────────────────────────────
+// App-level mutation logging: who did what to which record when.
+// Wired into createRecord / updateRecord / softDelete in lib/db/records.ts.
+
+export const auditTrail = pgTable('audit_trail', {
+  id:            text('id').primaryKey().default(atId),
+  actor:         text('actor'),                       // session email / system / ingest key
+  tableName:     text('table_name').notNull(),
+  recordId:      text('record_id').notNull(),
+  action:        text('action').notNull(),             // INSERT | UPDATE | DELETE (soft)
+  changedFields: jsonb('changed_fields'),              // {col: {from, to}} — only changed columns
+  changedAt:     timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  metadata:      jsonb('metadata'),                    // correlation ids, source, etc.
+}, (t) => [
+  index('idx_audit_trail_table_record').on(t.tableName, t.recordId, t.changedAt),
+  index('idx_audit_trail_changed_at').on(t.changedAt),
+  index('idx_audit_trail_actor').on(t.actor, t.changedAt),
+]);
+
 export const gatewayBehavioralTags = pgTable('gateway_behavioral_tags', {
   id:                     text('id').primaryKey().default(gbtId),
   auditResultId:          text('audit_result_id').notNull(),
@@ -520,6 +603,7 @@ export const clientPolicies = pgTable('client_policies', {
   notes:         text('notes'),
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_client_policies_client').on(t.clientId, t.status, t.policyType),
   index('idx_client_policies_effective').on(t.effectiveFrom, t.effectiveTo),
@@ -539,6 +623,7 @@ export const policyDocuments = pgTable('policy_documents', {
   summary:          text('summary'),
   uploadedBy:       text('uploaded_by'),
   createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:        timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_policy_documents_policy').on(t.policyId, t.extractionStatus),
   index('idx_policy_documents_client').on(t.clientId, t.createdAt),
@@ -559,6 +644,7 @@ export const policyRulesets = pgTable('policy_rulesets', {
   attestedAt:     timestamp('attested_at', { withTimezone: true }),
   scopeStatement: text('scope_statement'),
   createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:      timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   uniqueIndex('uq_policy_ruleset_client_version').on(t.clientId, t.version),
   index('idx_policy_rulesets_client').on(t.clientId, t.status),
@@ -579,6 +665,7 @@ export const policyRules = pgTable('policy_rules', {
   status:        text('status').notNull().default('draft'),
   createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
 }, (t) => [
   index('idx_policy_rules_ruleset').on(t.rulesetId, t.status),
   index('idx_policy_rules_client_key').on(t.clientId, t.ruleKey),

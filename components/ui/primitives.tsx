@@ -2,7 +2,7 @@
   components/ui/primitives.tsx — small shared visual pieces.
 
   Extracted from your components.jsx. These are pure presentational
-  components (no data fetching, no Airtable). Used across the queue,
+  components (no data fetching). Used across the queue,
   disputes, and dashboard screens.
 */
 
@@ -714,10 +714,10 @@ export function FilterPopover({ label, options, selected, onToggle }: {
 export type{ Confidence };
 
 // ── Table footer with "Showing X of Y" ─────────────────────────
-export function TableFooter({ showing, total, label = 'rows' }: {
-  showing: number; total: number; label?: string;
+export function TableFooter({ showing, total, label = 'rows', hasMore = false }: {
+  showing: number; total: number; label?: string; hasMore?: boolean;
 }) {
-  if (total === 0) return null;
+  if (total === 0 && showing === 0) return null;
   const isSliced = showing < total;
   return (
     <div style={{
@@ -728,7 +728,11 @@ export function TableFooter({ showing, total, label = 'rows' }: {
       <span className="mono" style={{
         fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.03em',
       }}>
-        {isSliced
+        {hasMore && isSliced
+          ? `Showing ${showing} of first ${total.toLocaleString()} ${label}; more available`
+          : hasMore
+          ? `Showing first ${showing.toLocaleString()} ${label}; more available`
+          : isSliced
           ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
           : `${total.toLocaleString()} ${label}`}
       </span>
@@ -737,10 +741,10 @@ export function TableFooter({ showing, total, label = 'rows' }: {
 }
 
 // ── Portal table footer (lighter style for portal) ──────────────
-export function PortalTableFooter({ showing, total, label = 'rows' }: {
-  showing: number; total: number; label?: string;
+export function PortalTableFooter({ showing, total, label = 'rows', hasMore = false }: {
+  showing: number; total: number; label?: string; hasMore?: boolean;
 }) {
-  if (total === 0) return null;
+  if (total === 0 && showing === 0) return null;
   const isSliced = showing < total;
   return (
     <div style={{
@@ -752,7 +756,11 @@ export function PortalTableFooter({ showing, total, label = 'rows' }: {
         fontFamily: 'var(--mono)', fontSize: 10.5, color: 'rgba(255,255,255,0.3)',
         letterSpacing: '0.03em',
       }}>
-        {isSliced
+        {hasMore && isSliced
+          ? `Showing ${showing} of first ${total.toLocaleString()} ${label}; more available`
+          : hasMore
+          ? `Showing first ${showing.toLocaleString()} ${label}; more available`
+          : isSliced
           ? `Showing ${showing} of ${total.toLocaleString()} ${label}`
           : `${total.toLocaleString()} ${label}`}
       </span>
@@ -802,4 +810,3 @@ export function ConsoleErrorState({ heading, message, hint }: {
     </div>
   );
 }
-

@@ -35,6 +35,11 @@ JWT strategy. Token/session carries:
 - `role`
 - `clientId`
 
+> `session.user.clientId` is the app-layer source of tenant identity. The planned
+> database-layer failsafe (Row-Level Security keyed on `app.current_tenant`) is designed
+> in [`data-protection.md`](data-protection.md): the value injected into the restricted
+> pooled connection originates here.
+
 ## Roles
 
 - `staff` - console access for audit ops, ingestion, disputes, engine, rulebook, users.

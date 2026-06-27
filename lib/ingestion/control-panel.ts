@@ -1,4 +1,4 @@
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import { getSql } from '@/lib/db';
 import { listExceptions } from '@/lib/ingestion/mappings';
 import { getCycleSummaries, listFulfillmentLines } from '@/lib/ingestion/3pl/stage';

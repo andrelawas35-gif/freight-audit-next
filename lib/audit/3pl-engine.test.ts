@@ -9,7 +9,7 @@ const { query, recordRun, batchCreateMock } = vi.hoisted(() => ({
 vi.mock('@/lib/db', () => ({
   getSql: () => ({ query }),
 }));
-vi.mock('@/lib/airtable', () => ({ batchCreate: batchCreateMock }));
+vi.mock('@/lib/db/records', () => ({ batchCreate: batchCreateMock }));
 vi.mock('./rulebook', () => ({
   loadRulebook: vi.fn().mockResolvedValue([]),
   createResolver: vi.fn().mockReturnValue({}),

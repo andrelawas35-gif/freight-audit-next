@@ -5,6 +5,7 @@
 import { auth } from '@/auth';
 import { UploadForm } from '@/components/portal/upload-form';
 import { listUploads, type UploadLog } from '@/lib/ingestion/uploads';
+import { DOCUMENT_TYPE_LABELS, type DocumentType } from '@/lib/portal/upload-router';
 
 export const metadata = { title: 'Upload data · Aurelian Collective' };
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,11 @@ export const dynamic = 'force-dynamic';
 function fmtWhen(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function docTypeLabel(dt: string | undefined): string {
+  if (!dt) return '—';
+  return DOCUMENT_TYPE_LABELS[dt as DocumentType] || dt;
 }
 
 export default async function UploadPage() {
@@ -29,10 +35,9 @@ export default async function UploadPage() {
 
   return (
     <div className="portal-upload-page">
-      <h1>Upload shipment data</h1>
+      <h1>Upload data</h1>
       <p className="portal-page-subtitle">
-        Upload a CSV export from your WMS or shipping platform. We match it against carrier
-        invoices to find overcharges.
+        Upload shipment CSVs, insurance policies, carrier contracts, SOPs, or claims history.
       </p>
 
       <UploadForm />
@@ -46,6 +51,7 @@ export default async function UploadPage() {
               <tr>
                 <th>When</th>
                 <th>File</th>
+                <th>Type</th>
                 <th className="num">Rows</th>
                 <th className="num">Staged</th>
                 <th className="num">Health</th>
@@ -59,6 +65,15 @@ export default async function UploadPage() {
                   <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {u.file_name || '—'}
                   </td>
+                  <td>
+                    <span style={{
+                      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
+                      textTransform: 'uppercase', letterSpacing: '0.04em',
+                      color: 'rgba(255,255,255,0.4)',
+                    }}>
+                      {docTypeLabel(u.document_type)}
+                    </span>
+                  </td>
                   <td className="num mono">{u.rows}</td>
                   <td className="num mono" style={{ fontWeight: 700 }}>{u.staged}</td>
                   <td className="num mono" style={{
@@ -71,16 +86,20 @@ export default async function UploadPage() {
                       fontSize: 11, fontWeight: 600,
                       color: u.status === 'ok' ? 'var(--green-ink)'
                            : u.status === 'partial' ? 'var(--amber-ink)'
+                           : u.status === 'document' ? 'var(--green-ink)'
                            : 'var(--ink-3)',
                     }}>
-                      {u.status === 'ok' ? 'Processed' : u.status === 'partial' ? 'Partial' : 'No rows'}
+                      {u.status === 'ok' ? 'Processed'
+                       : u.status === 'partial' ? 'Partial'
+                       : u.status === 'document' ? 'Received'
+                       : 'No rows'}
                     </span>
                   </td>
                 </tr>
               ))}
               {history.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 24 }}>
+                  <td colSpan={7} style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 24 }}>
                     No uploads yet.
                   </td>
                 </tr>
@@ -91,15 +110,18 @@ export default async function UploadPage() {
       </section>
 
       <section className="portal-accepted-columns">
-        <h2>
-          Accepted columns
-        </h2>
+        <h2>Accepted file types</h2>
         <p>
-          Headers are matched flexibly (case-insensitive). Include at least a{' '}
-          <strong>tracking number</strong> or <strong>PRO number</strong>. Other recognized
-          columns: carrier, weight, length, width, height, origin zip, destination zip,
-          address type, service level, ship date, reference/order number. Use the{' '}
-          <strong>Download template</strong> button above for a ready-made file.
+          <strong>Shipment CSV</strong> — Headers are matched flexibly (case-insensitive). Include at
+          least a tracking number or PRO number. Other recognized columns: carrier, weight, length,
+          width, height, origin zip, destination zip, address type, service level, ship date,
+          reference/order number. Use the <strong>Download template</strong> button above for a
+          ready-made file.
+        </p>
+        <p style={{ marginTop: 8 }}>
+          <strong>Insurance Policy, Carrier Contract, SOP, Claims History</strong> — Upload your
+          documents as PDF, DOCX, TXT, JPG, or PNG. Documents will be routed to AI extraction for
+          clause identification, rule mapping, and dispute evidence indexing.
         </p>
       </section>
     </div>

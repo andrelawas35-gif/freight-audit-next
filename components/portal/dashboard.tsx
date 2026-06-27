@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   BarChart, Bar, Cell, CartesianGrid,
 } from 'recharts';
+import { ComplianceTabShell } from '@/components/portal/compliance-tab';
+import type { ComplianceData } from '@/lib/portal/data-loader';
 
 export type DashboardProps = {
   companyName: string;
@@ -20,6 +23,9 @@ export type DashboardProps = {
   openDisputes: { id: string; status: string; amount: number }[];
   topCarriers: { carrier: string; amount: number; pct: number }[];
   activity: { id: string; text: string; date: string; tone: string }[];
+  complianceData?: ComplianceData;
+  activeTab?: string;
+  clientId?: string;
 };
 
 const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
@@ -158,13 +164,27 @@ export function Dashboard(props: DashboardProps) {
   const {
     companyName, recovered, inDispute, activeCount, totalCount,
     monthly, breakdown, recentRecovered, openDisputes, topCarriers, activity,
+    complianceData, activeTab, clientId,
   } = props;
   const [chartMode, setChartMode] = useState<'cumulative' | 'monthly'>('cumulative');
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const winRate = totalCount > 0
     ? Math.round((recentRecovered.length / Math.max(1, recentRecovered.length + openDisputes.length)) * 100)
     : 0;
   const hasMonthly = monthly.length > 0;
   const maxBreakdown = breakdown.length > 0 ? breakdown[0].amount : 1;
+  const isCompliance = activeTab === 'compliance';
+
+  function switchTab(tab: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'compliance') {
+      params.set('tab', 'compliance');
+    } else {
+      params.delete('tab');
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -178,7 +198,44 @@ export function Dashboard(props: DashboardProps) {
         </p>
       </div>
 
-      {/* Stats row */}
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+        {(['recovery', 'compliance'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => switchTab(tab)}
+            style={{
+              fontFamily: 'var(--mono)',
+              fontSize: 9,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              padding: '3px 8px',
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              background:
+                (tab === 'compliance' ? isCompliance : !isCompliance)
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'transparent',
+              color:
+                (tab === 'compliance' ? isCompliance : !isCompliance)
+                  ? '#EDEDEF'
+                  : 'rgba(255,255,255,0.3)',
+              transition: 'all 0.1s',
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Compliance tab content */}
+      {isCompliance ? (
+        <ComplianceTabShell complianceData={complianceData!} clientId={clientId!} />
+      ) : (
+        <>
+          {/* Stats row */}
       <div className="portal-dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <StatCard label="Recovered" value={usd(recovered)} color="#4ade80" sub={`+${usd(monthly.length > 0 ? monthly[monthly.length - 1].recovered : 0)} this month`} />
         <StatCard label="In dispute" value={usd(inDispute)} color="#f87171" sub={`${activeCount} active`} />
@@ -288,6 +345,8 @@ export function Dashboard(props: DashboardProps) {
           ))}
         </SectionCard>
       </div>
+        </>
+      )}
     </div>
   );
 }

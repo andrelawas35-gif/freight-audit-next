@@ -7,7 +7,7 @@
 */
 
 import { getSql } from '@/lib/db';
-import { batchCreate } from '@/lib/airtable';
+import { batchCreate } from '@/lib/db/records';
 import { loadRulebook, createResolver } from './rulebook';
 import { recordRun } from './runs';
 import { log } from '@/lib/logger';

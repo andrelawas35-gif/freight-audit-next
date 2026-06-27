@@ -10,7 +10,7 @@
 */
 
 import { getSql } from '@/lib/db';
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import type { FulfillmentLine, StorageLine } from './parse';
 
 export type StageFulfillmentResult = { staged: number; matched: number; unmatched: number };

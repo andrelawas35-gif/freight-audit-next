@@ -15,6 +15,7 @@ import { stageInvoice }      from '@/lib/ingestion/normalize';
 import type { LtlCsvColumnMap } from '@/lib/ingestion/carriers/ltl-csv';
 import { loadLearnedMappings, createMappingContext, persistExceptions } from '@/lib/ingestion/mappings';
 import { annotateOpenExceptions } from '@/lib/ingestion/data-clerk';
+import { startBatch, finishBatch, trackRecord } from '@/lib/ingestion/lineage';
 import { withObservability } from '@/lib/api-handler';
 
 const bodySchema = z.object({
@@ -40,11 +41,20 @@ export const POST = withObservability('ingest/sftp-poll', async (req, { log }) =
   }
   const { scac, csv, columns } = parsed.data;
 
+  const batchId = await startBatch('SFTP', {
+    carrierScac: scac.toUpperCase(),
+    fileName: `sftp/${scac.toLowerCase()}.csv`,
+  });
+
   const ctx = createMappingContext(await loadLearnedMappings(), 'csv');
   const invoices = parseLtlCsv(csv, { scac, columns }, ctx);
 
   const results = await Promise.allSettled(
-    invoices.map((inv) => stageInvoice(inv))
+    invoices.map(async (inv) => {
+      const id = await stageInvoice(inv);
+      await trackRecord(batchId, inv, 'invoice', id);
+      return id;
+    })
   );
 
   const succeeded = results.filter((r) => r.status === 'fulfilled').length;
@@ -56,6 +66,8 @@ export const POST = withObservability('ingest/sftp-poll', async (req, { log }) =
   const newExceptions = await persistExceptions(ctx.exceptions);
   if (newExceptions > 0) await annotateOpenExceptions();
 
-  log.info('SFTP poll processed', { scac, total: invoices.length, succeeded, failed, newExceptions });
-  return NextResponse.json({ ok: true, invoices: invoices.length, succeeded, failed, errors, newExceptions });
+  await finishBatch(batchId, { rowCount: invoices.length, stagedCount: succeeded, errorCount: failed });
+
+  log.info('SFTP poll processed', { scac, total: invoices.length, succeeded, failed, newExceptions, batchId });
+  return NextResponse.json({ ok: true, invoices: invoices.length, succeeded, failed, errors, newExceptions, batchId });
 });

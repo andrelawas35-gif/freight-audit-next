@@ -1,8 +1,11 @@
 # Policy Intelligence — Gap Analysis & Backtest
 
-The gap analysis runs a Ruleset against history to find preventable loss and compliance
-drift. It is the second evaluator alongside the audit engine — see the division of
-concerns in [`../audit-engine.md`](../audit-engine.md).
+> **STATUS: IMPLEMENTED (2026-06-26).** All 8 correctness items from ADR 0001 are
+> implemented in `lib/intelligence/policy-service.ts`: shipment spine, keyset pagination,
+> dedup, multi-shipment handling, tri-valued evaluation, effective-dating, condition key
+> validation, preview/official modes. 19 backtest correctness tests pass. Migration 0007
+> adds `mode`, `input_snapshot`, `data_required_count` columns. See `../../CHANGELOG.md`
+> for full details.
 
 ## Policy evaluator contract
 

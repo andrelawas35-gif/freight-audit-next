@@ -8,7 +8,7 @@
   The audit engine (lib/audit/engine.ts) then reads from these tables.
 */
 
-import { createRecord, fetchRecords, findByField, updateRecord } from '@/lib/airtable';
+import { createRecord, fetchRecords, findByField, updateRecord } from '@/lib/db/records';
 import type { NormalizedInvoice, NormalizedShipment } from './schema';
 import { log } from '@/lib/logger';
 

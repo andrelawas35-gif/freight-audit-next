@@ -67,6 +67,7 @@ export function DisputesList({ rows, totalFiled, activeCount, recovered, avgDays
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<string | null>(null);
+  const mayHaveMoreRows = rows.length >= 500;
 
   const filtered = rows.filter((r) => {
     if (filter === 'active') return r.status !== 'Won' && r.status !== 'Closed';
@@ -195,7 +196,11 @@ export function DisputesList({ rows, totalFiled, activeCount, recovered, avgDays
               fontFamily: 'var(--mono)', fontSize: 10.5, color: 'rgba(255,255,255,0.3)',
               letterSpacing: '0.03em',
             }}>
-              {filter !== 'all'
+              {mayHaveMoreRows && filter !== 'all'
+                ? `Showing ${filtered.length} of first ${rows.length.toLocaleString()} disputes; more may be available`
+                : mayHaveMoreRows
+                ? `Showing first ${rows.length.toLocaleString()} disputes; more may be available`
+                : filter !== 'all'
                 ? `Showing ${filtered.length} of ${rows.length} disputes`
                 : `${rows.length} disputes`}
             </span>

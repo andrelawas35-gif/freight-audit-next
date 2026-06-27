@@ -5,11 +5,13 @@ import { useActionState } from 'react';
 import {
   addDocumentAction,
   addRuleAction,
+  activateRulesetAction,
+  attestRulesetAction,
   createPolicyAction,
   createRulesetAction,
   runBacktestAction,
   type PolicyActionState,
-} from '@/app/(console)/policies/actions';
+} from '@/app/(console)/console/policies/actions';
 import { Badge, Btn, Card, ConsoleEmptyState, KPI, SectionLabel, TableFooter } from '@/components/ui/primitives';
 import {
   POLICY_DOCUMENT_STATUSES,
@@ -177,6 +179,12 @@ export function PolicyDetailWorkbench({
 
       <SectionLabel>Rulesets</SectionLabel>
       <RulesetTable policyId={policy.id} rulesets={rulesets} />
+
+      <AttestationPanel policyId={policy.id} rulesets={rulesets} />
+
+      <ScopeStatement policy={policy} rulesets={rulesets} rules={rules} />
+
+      <GuaranteeCard />
     </div>
   );
 }
@@ -264,6 +272,7 @@ function NewPolicyForm({ clients }: { clients: ClientOption[] }) {
         <Col label="Status">
           <select name="status" style={inputStyle} defaultValue="draft">
             <option value="draft">Draft</option>
+            <option value="client_attested">Client attested</option>
             <option value="active">Active</option>
             <option value="archived">Archived</option>
           </select>
@@ -315,6 +324,7 @@ function RulesetForm({ policy }: { policy: ClientPolicyRow }) {
         <Col label="Status">
           <select name="status" style={inputStyle} defaultValue="draft">
             <option value="draft">Draft</option>
+            <option value="client_attested">Client attested</option>
             <option value="active">Active</option>
             <option value="archived">Archived</option>
           </select>
@@ -374,6 +384,7 @@ function PolicyRuleForm({
         <Col label="Status">
           <select name="status" style={inputStyle} defaultValue="draft">
             <option value="draft">Draft</option>
+            <option value="client_attested">Client attested</option>
             <option value="active">Active</option>
             <option value="archived">Archived</option>
           </select>
@@ -539,6 +550,226 @@ function BacktestResultsTable({ results }: { results: PolicyBacktestResultRow[] 
   );
 }
 
+// ── Attestation panel ─────────────────────────────────────────────
+
+function AttestationPanel({
+  policyId,
+  rulesets,
+}: {
+  policyId: string;
+  rulesets: PolicyRulesetRow[];
+}) {
+  if (rulesets.length === 0) return null;
+
+  return (
+    <>
+      <SectionLabel>Ratification &amp; attestation</SectionLabel>
+      {rulesets.map((ruleset) => {
+        const isDraft = ruleset.status === 'draft';
+        const isAttested = ruleset.status === 'client_attested';
+        const isActive = ruleset.status === 'active';
+        const isArchived = ruleset.status === 'archived';
+
+        return (
+          <Card key={ruleset.id} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>Ruleset {ruleset.version}</span>
+                  <StatusBadge status={ruleset.status} />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
+                  Effective: {formatRange(ruleset.effective_from, ruleset.effective_to)} / {ruleset.rule_count} rules
+                </div>
+              </div>
+            </div>
+
+            {isDraft && (
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-2)', marginBottom: 8 }}>
+                  Awaiting client attestation — the client (or broker) must confirm the digitization
+                  accurately reflects their policy document before activation.
+                </div>
+                <AttestationForm rulesetId={ruleset.id} policyId={policyId} />
+              </div>
+            )}
+
+            {isAttested && (
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-2)', marginBottom: 6 }}>
+                  Attested by <strong>{ruleset.reviewed_by || 'Unknown'}</strong>
+                  {ruleset.activated_at ? ` on ${dateOnly(ruleset.activated_at)}` : ''}.
+                  Ready for activation.
+                </div>
+                <ActivationButton rulesetId={ruleset.id} policyId={policyId} />
+              </div>
+            )}
+
+            {isActive && (
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, fontSize: 12, color: 'var(--ink-2)' }}>
+                Active{ruleset.activated_at ? ` since ${dateOnly(ruleset.activated_at)}` : ''}
+                {ruleset.reviewed_by ? ` / attested by ${ruleset.reviewed_by}` : ''}.
+                Rules are live in backtests and gateway precheck.
+              </div>
+            )}
+
+            {isArchived && (
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, fontSize: 12, color: 'var(--ink-2)' }}>
+                Archived{ruleset.archived_at ? ` on ${dateOnly(ruleset.archived_at)}` : ''}.
+                This ruleset is no longer active.
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </>
+  );
+}
+
+function AttestationForm({ rulesetId, policyId }: { rulesetId: string; policyId: string }) {
+  const [state, action, pending] = useActionState<PolicyActionState, FormData>(attestRulesetAction, undefined);
+  return (
+    <form action={action} style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
+      <input type="hidden" name="rulesetId" value={rulesetId} />
+      <input type="hidden" name="policyId" value={policyId} />
+      <Col label="Attested by (name / email)">
+        <input name="attestedBy" required placeholder="broker@client.com" style={inputStyle} />
+      </Col>
+      <Col label="Notes (optional)">
+        <input name="attestationNotes" placeholder="Confirmed via email on..." style={inputStyle} />
+      </Col>
+      <button disabled={pending} style={buttonStyle}>{pending ? 'Recording...' : 'Record attestation'}</button>
+      <ActionNote state={state} />
+    </form>
+  );
+}
+
+function ActivationButton({ rulesetId, policyId }: { rulesetId: string; policyId: string }) {
+  const [state, action, pending] = useActionState<PolicyActionState, FormData>(activateRulesetAction, undefined);
+  return (
+    <form action={action} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <input type="hidden" name="rulesetId" value={rulesetId} />
+      <input type="hidden" name="policyId" value={policyId} />
+      <button
+        type="submit"
+        disabled={pending}
+        style={{
+          ...buttonStyle,
+          background: 'oklch(0.55 0.18 160)',
+          color: '#fff',
+        }}
+      >
+        {pending ? 'Activating...' : 'Activate ruleset'}
+      </button>
+      <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+        All rules will become active and live in backtests.
+      </span>
+      <ActionNote state={state} />
+    </form>
+  );
+}
+
+// ── Scope statement ───────────────────────────────────────────────
+
+function ScopeStatement({
+  policy,
+  rulesets,
+  rules,
+}: {
+  policy: ClientPolicyRow;
+  rulesets: PolicyRulesetRow[];
+  rules: PolicyRuleRow[];
+}) {
+  if (rules.length === 0) return null;
+
+  const activeRules = rules.filter((r) => r.status === 'active');
+  const categories = activeRules.reduce<Record<string, number>>((acc, r) => {
+    acc[r.category] = (acc[r.category] || 0) + 1;
+    return acc;
+  }, {});
+
+  const activeRuleset = rulesets.find((rs) => rs.status === 'active');
+
+  return (
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Scope Statement</h3>
+        <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
+          Client: {policy.client_name || policy.client_id}
+        </div>
+      </div>
+
+      {/* In scope */}
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: 'var(--green-ink)' }}>
+          In scope — {activeRules.length} active control{activeRules.length !== 1 ? 's' : ''}
+        </div>
+        {activeRules.length > 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+            {Object.entries(categories).map(([cat, count]) => (
+              <div key={cat} style={{ marginBottom: 2 }}>
+                <span style={{ fontWeight: 600 }}>{cat}</span>: {count} rule{count !== 1 ? 's' : ''}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+            No active rules yet. Rules become active after client attestation and staff activation.
+          </div>
+        )}
+      </div>
+
+      {/* Out of scope */}
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6, color: 'var(--ink-3)' }}>
+          Out of scope — not enforced
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+          <div>Ambiguous terms (e.g., &ldquo;commercially reasonable packaging&rdquo;) — not digitized</div>
+          <div>Non-operational clauses (premium, notice, subrogation, deductibles, cancellation)</div>
+          <div>Unmapped operational clauses — tracked as taxonomy-discovery candidates</div>
+        </div>
+      </div>
+
+      {/* Effective period */}
+      {activeRuleset && (
+        <div style={{ fontSize: 12, color: 'var(--ink-2)', borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+          <strong>Effective period:</strong>{' '}
+          {formatRange(activeRuleset.effective_from, activeRuleset.effective_to)}
+        </div>
+      )}
+
+      {/* Attestation status */}
+      {activeRuleset?.reviewed_by && (
+        <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+          <strong>Attested by:</strong>{' '}
+          {activeRuleset.reviewed_by}
+          {activeRuleset.activated_at ? ` on ${dateOnly(activeRuleset.activated_at)}` : ''}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── Guarantee card ────────────────────────────────────────────────
+
+function GuaranteeCard() {
+  return (
+    <Card style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Governance guarantee</h3>
+      <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6 }}>
+        We guarantee that the operational controls you have confirmed are enforced by the Gateway
+        exactly as confirmed, and that every shipment decision is logged. We do not guarantee
+        insurance coverage.
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+        The Gateway enforces operational shipping controls; it is not insurance, not insurance
+        advice, and does not guarantee claim coverage. Coverage determinations rest with your insurer.
+      </div>
+    </Card>
+  );
+}
+
 function Col({ label, children }: { label: string; children: React.ReactNode }) {
   return <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}><span style={labelStyle}>{label}</span>{children}</label>;
 }
@@ -553,7 +784,12 @@ function ActionNote({ state }: { state: PolicyActionState }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <Badge color={status === 'active' ? 'green' : status === 'archived' ? 'neutral' : 'amber'}>{status}</Badge>;
+  const color =
+    status === 'active' ? 'green' :
+    status === 'client_attested' ? 'blue' :
+    status === 'archived' ? 'neutral' :
+    'amber';
+  return <Badge color={color}>{status}</Badge>;
 }
 
 function formatRange(from?: string | null, to?: string | null) {

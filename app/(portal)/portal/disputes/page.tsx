@@ -1,5 +1,5 @@
 import { auth } from '@/auth';
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import { DisputesList } from '@/components/portal/disputes-list';
 import type { Dispute, AuditResult } from '@/lib/types';
 
@@ -50,12 +50,12 @@ export default async function DisputesPage() {
   try {
     [disputes, audits] = await Promise.all([
       fetchRecords('Disputes', {
-        filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
+        filterByFormula: `{Client} = "${clientId}"`,
         sort: [{ field: 'Opened date', direction: 'desc' }],
         maxRecords: 500,
       }) as Promise<PortalDispute[]>,
       fetchRecords('Audit Results', {
-        filterByFormula: `FIND("${clientId}", ARRAYJOIN({Client}))`,
+        filterByFormula: `{Client} = "${clientId}"`,
         maxRecords: 1000,
       }) as Promise<AuditResult[]>,
     ]);

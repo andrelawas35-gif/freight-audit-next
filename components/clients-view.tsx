@@ -1,18 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, KPI, Ticker, SectionLabel, Btn, RuleTag, StagePill } from '@/components/ui/primitives';
+import { Card, KPI, Ticker, SectionLabel, Btn, RuleTag, StagePill, TableFooter } from '@/components/ui/primitives';
 import { fmtDate, fmtPct, fmtUSD } from '@/lib/format';
-import type { ClientScorecard } from '@/app/(console)/clients/page';
+import type { ClientScorecard } from '@/app/(console)/console/clients/page';
 
 export function ClientsView({ 
   scorecards, 
   totals,
   disputes = [],
+  hasMoreClients = false,
 }: { 
   scorecards: ClientScorecard[], 
   totals: { recoveredMTD: number, recoveredYTD: number, gainShare: number },
   disputes?: any[],
+  hasMoreClients?: boolean,
 }) {
   const [sel, setSel] = useState<ClientScorecard | null>(null);
 
@@ -22,6 +24,8 @@ export function ClientsView({
   const clientDisputes = sel
     ? disputes.filter(d => {
         const clientLink = d['Client'];
+        if (clientLink === sel.id) return true;
+        // Backward compat: handle legacy array column
         if (Array.isArray(clientLink)) return clientLink.includes(sel.id);
         return false;
       })
@@ -186,9 +190,10 @@ export function ClientsView({
           })}
           {scorecards.length === 0 && (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>
-              No clients found. Add your first client in Airtable.
+              No clients found. Add a client record to start tracking recovery performance.
             </div>
           )}
+          <TableFooter showing={scorecards.length} total={scorecards.length} label="clients" hasMore={hasMoreClients} />
         </Card>
       )}
     </div>

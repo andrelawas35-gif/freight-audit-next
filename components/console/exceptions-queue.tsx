@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import {
   resolveExceptionAction, dismissExceptionAction, suggestExceptionAction,
-} from '@/app/(console)/ingestion/exceptions/actions';
+} from '@/app/(console)/console/ingestion/exceptions/actions';
 
 type ExceptionRow = {
   id: string; mapping_type: string; carrier_scac: string | null; raw_code: string;

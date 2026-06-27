@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useActionState } from 'react';
 import type { CSSProperties } from 'react';
-import { runManualIngestion, type ManualIngestResult } from '@/app/(console)/ingestion/actions';
+import { runManualIngestion, type ManualIngestResult } from '@/app/(console)/console/ingestion/actions';
 
 type ClientOption = { id: string; name: string };
 

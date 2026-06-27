@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { runConsoleIntake, type IntakeResult } from '@/app/(console)/ingestion/actions';
+import { runConsoleIntake, type IntakeResult } from '@/app/(console)/console/ingestion/actions';
 
 type ClientOption = { id: string; name: string };
 

@@ -11,22 +11,22 @@ import { useEffect, useState } from 'react';
 
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
-  '/':                      { title: 'Today',               sub: 'Action queue · what needs doing right now' },
-  '/queue':                 { title: 'Audit Queue',         sub: 'Two-pane review · j/k to navigate' },
-  '/disputes':              { title: 'Disputes',            sub: 'Recovery pipeline across carriers' },
-  '/carriers':              { title: 'Carrier Scorecards',  sub: 'Performance, error rates, response times' },
-  '/clients':               { title: 'Clients',             sub: 'Gain-share portfolio' },
-  '/engine':                { title: 'Audit Engine',        sub: 'Run rules · review history' },
-  '/ingestion':             { title: 'Ingestion',           sub: 'Invoice pipeline · match rate · coverage' },
-  '/ingestion/exceptions':  { title: 'Exceptions Queue',    sub: 'Map unknown codes · learned automatically' },
-  '/users':                 { title: 'Users',               sub: 'Staff accounts · client access' },
-  '/rulebook':              { title: 'Rulebook',            sub: 'Audit thresholds · contract → carrier → global' },
+  '/console':               { title: 'Today',               sub: 'Action queue · what needs doing right now' },
+  '/console/queue':                 { title: 'Audit Queue',         sub: 'Two-pane review · j/k to navigate' },
+  '/console/disputes':              { title: 'Disputes',            sub: 'Recovery pipeline across carriers' },
+  '/console/carriers':              { title: 'Carrier Scorecards',  sub: 'Performance, error rates, response times' },
+  '/console/clients':               { title: 'Clients',             sub: 'Gain-share portfolio' },
+  '/console/engine':                { title: 'Audit Engine',        sub: 'Run rules · review history' },
+  '/console/ingestion':             { title: 'Ingestion',           sub: 'Invoice pipeline · match rate · coverage' },
+  '/console/ingestion/exceptions':  { title: 'Exceptions Queue',    sub: 'Map unknown codes · learned automatically' },
+  '/console/users':                 { title: 'Users',               sub: 'Staff accounts · client access' },
+  '/console/rulebook':              { title: 'Rulebook',            sub: 'Audit thresholds · contract → carrier → global' },
 };
 
 export function Topbar() {
 
   const pathname = usePathname();
-  const meta = PAGE_META[pathname] || PAGE_META['/'];
+  const meta = PAGE_META[pathname] || PAGE_META['/console'];
 
 
 

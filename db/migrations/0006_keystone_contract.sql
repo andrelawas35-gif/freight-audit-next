@@ -96,21 +96,21 @@ DROP POLICY IF EXISTS tenant_isolation_invoices ON "Invoices";
 CREATE POLICY tenant_isolation_invoices ON "Invoices"
   FOR ALL
   TO app_tenant
-  USING (current_setting('app.current_tenant', true) = ANY("Clients"));
+  USING (client_id = current_setting('app.current_tenant', true));
 
 ALTER TABLE "Audit Results" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation_audit_results ON "Audit Results";
 CREATE POLICY tenant_isolation_audit_results ON "Audit Results"
   FOR ALL
   TO app_tenant
-  USING (current_setting('app.current_tenant', true) = ANY("Client"));
+  USING (client_id = current_setting('app.current_tenant', true));
 
 ALTER TABLE "Disputes" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation_disputes ON "Disputes";
 CREATE POLICY tenant_isolation_disputes ON "Disputes"
   FOR ALL
   TO app_tenant
-  USING (current_setting('app.current_tenant', true) = ANY("Client"));
+  USING (client_id = current_setting('app.current_tenant', true));
 
 -- 4b. Scalar client_id platform tables
 

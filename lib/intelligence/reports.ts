@@ -37,7 +37,7 @@ export async function getGatewayReadinessReport(input: {
 
   if (input.clientId) {
     params.push(input.clientId);
-    where.push(`$${params.length} = ANY("Client")`);
+    where.push(`client_id = $${params.length}`);
   }
   if (input.months) {
     params.push(input.months);
@@ -47,7 +47,7 @@ export async function getGatewayReadinessReport(input: {
   return (await sql.query(
     `SELECT
        date_trunc('month', "Audited at"::timestamptz)::date::text AS month,
-       "Client"[1] AS client_id,
+       client_id,
        "Gateway category" AS gateway_category,
        count(*)::int AS findings,
        coalesce(sum("Variance"), 0) AS margin_lost,
@@ -73,7 +73,7 @@ export async function getTopGatewayRuleSuggestions(input: {
 
   if (input.clientId) {
     params.push(input.clientId);
-    where.push(`$${params.length} = ANY("Client")`);
+    where.push(`client_id = $${params.length}`);
   }
 
   params.push(input.limit ?? 20);
@@ -81,7 +81,7 @@ export async function getTopGatewayRuleSuggestions(input: {
 
   return (await sql.query(
     `SELECT
-       "Client"[1] AS client_id,
+       client_id,
        "Gateway category" AS gateway_category,
        "Gateway rule suggestion" AS gateway_rule_suggestion,
        count(*)::int AS findings,

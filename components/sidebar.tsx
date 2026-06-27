@@ -18,15 +18,16 @@ import { Glyph } from '@/components/ui/primitives';
 import { CommandPalette } from './command-palette';
 
 const NAV = [
-  { href: '/',           label: 'Today',     glyph: 'home',      kbd: '1' },
-  { href: '/queue',      label: 'Queue',     glyph: 'flag',      kbd: '2' },
-  { href: '/disputes',   label: 'Disputes',  glyph: 'gavel',     kbd: '3' },
-  { href: '/carriers',   label: 'Carriers',  glyph: 'truck',     kbd: '4' },
-  { href: '/clients',    label: 'Clients',   glyph: 'users',     kbd: '5' },
-  { href: '/engine',     label: 'Engine',    glyph: 'grid',      kbd: '6' },
-  { href: '/ingestion',  label: 'Ingestion', glyph: 'arrowDown', kbd: '7' },
-  { href: '/users',      label: 'Users',     glyph: 'shield',    kbd: '8' },
-  { href: '/rulebook',   label: 'Rulebook',  glyph: 'book',      kbd: '9' },
+  { href: '/console',           label: 'Today',     glyph: 'home',      kbd: '1' },
+  { href: '/console/queue',      label: 'Queue',     glyph: 'flag',      kbd: '2' },
+  { href: '/console/disputes',   label: 'Disputes',  glyph: 'gavel',     kbd: '3' },
+  { href: '/console/carriers',   label: 'Carriers',  glyph: 'truck',     kbd: '4' },
+  { href: '/console/clients',    label: 'Clients',   glyph: 'users',     kbd: '5' },
+  { href: '/console/engine',     label: 'Engine',    glyph: 'grid',      kbd: '6' },
+  { href: '/console/ingestion',  label: 'Ingestion', glyph: 'arrowDown', kbd: '7' },
+  { href: '/console/users',      label: 'Users',     glyph: 'shield',    kbd: '8' },
+  { href: '/console/rulebook',   label: 'Rulebook',  glyph: 'book',      kbd: '9' },
+  { href: '/console/gateway-tags', label: 'Gateway',  glyph: 'eye',       kbd: '0' },
 ];
 
 
@@ -92,7 +93,7 @@ export function Sidebar({ searchAudits, searchDisputes }: { searchAudits: any[];
       {/* Nav links */}
       <nav style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
         {NAV.map((n) => {
-          const active = pathname === n.href;
+          const active = n.href === '/console' ? pathname.startsWith('/console') : pathname === n.href;
           return (
             <Link key={n.href} href={n.href} style={{
               display: 'flex', alignItems: 'center', gap: 9, padding: '5px 9px',

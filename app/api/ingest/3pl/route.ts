@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parseFulfillmentCsv, parseStorageCsv } from '@/lib/ingestion/3pl/parse';
 import { stageFulfillment, stageStorage } from '@/lib/ingestion/3pl/stage';
+import { startBatch, finishBatch, trackRecord } from '@/lib/ingestion/lineage';
 import { withObservability } from '@/lib/api-handler';
 
 const bodySchema = z.object({
@@ -46,15 +47,28 @@ export const POST = withObservability('ingest/3pl', async (req, { log }) => {
   }
   const { clientId, cycle, type, scac, csv } = parsed.data;
 
-  if (type === 'storage') {
-    const { lines, rowCount, skipped } = parseStorageCsv(csv);
-    const { staged } = await stageStorage({ clientId, cycle, lines });
-    log.info('3PL storage staged', { clientId, cycle, rows: rowCount, staged, skipped });
-    return NextResponse.json({ ok: true, type, rows: rowCount, staged, skipped });
-  }
+  const batchId = await startBatch('API', {
+    carrierScac: scac ?? undefined,
+    clientId,
+    fileName: `3pl/${type ?? 'fulfillment'}/${cycle}`,
+  });
 
-  const { lines, rowCount, skipped } = parseFulfillmentCsv(csv);
-  const result = await stageFulfillment({ clientId, carrierScac: scac ?? null, cycle, lines });
-  log.info('3PL fulfillment staged', { clientId, cycle, rows: rowCount, skipped });
-  return NextResponse.json({ ok: true, type: 'fulfillment', rows: rowCount, skipped, ...result });
+  try {
+    if (type === 'storage') {
+      const { lines, rowCount, skipped } = parseStorageCsv(csv);
+      const { staged } = await stageStorage({ clientId, cycle, lines });
+      await finishBatch(batchId, { rowCount, stagedCount: staged, errorCount: skipped });
+      log.info('3PL storage staged', { clientId, cycle, rows: rowCount, staged, skipped, batchId });
+      return NextResponse.json({ ok: true, type, rows: rowCount, staged, skipped, batchId });
+    }
+
+    const { lines, rowCount, skipped } = parseFulfillmentCsv(csv);
+    const result = await stageFulfillment({ clientId, carrierScac: scac ?? null, cycle, lines });
+    await finishBatch(batchId, { rowCount, stagedCount: result.staged, errorCount: skipped });
+    log.info('3PL fulfillment staged', { clientId, cycle, rows: rowCount, skipped, batchId });
+    return NextResponse.json({ ok: true, type: 'fulfillment', rows: rowCount, skipped, batchId, ...result });
+  } catch (err: any) {
+    await finishBatch(batchId, { rowCount: 0, stagedCount: 0, errorCount: 1 });
+    throw err;
+  }
 });

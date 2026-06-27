@@ -1,4 +1,4 @@
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import { StatBar } from '@/components/ui/primitives';
 import { fmtUSD } from '@/lib/format';
 import { Dispute } from '@/lib/types';

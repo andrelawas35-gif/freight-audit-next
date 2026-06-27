@@ -113,15 +113,79 @@ Do not put raw PDF text or private policy terms in the client portal during MVP.
 
 | Page | Route | Data Source |
 |------|-------|-------------|
-| Dashboard | `/portal` | Client + Disputes + Invoices + Audit Results |
+| Dashboard | `/portal` | Recovery tab: Client + Disputes + Invoices + Audit Results (AirTable). Compliance tab: `portalDataLoader()` → SQL report functions |
 | Disputes | `/portal/disputes` | Disputes + Audit Results |
 | Invoices | `/portal/invoices` | Invoices + Audit Results |
-| Upload | `/portal/upload` | Upload form + upload_logs |
+| Upload | `/portal/upload` | Multi-type upload form: Insurance Policy, Carrier Contract, SOP, Claims History, Shipment CSV |
 | Reports | `/portal/reports` | Disputes + Invoices aggregated by month |
 | Settings | `/portal/settings` | Placeholder |
 | Help | `/portal/help` | Placeholder |
 
-Future client-facing gateway readiness reports should be framed as "savings opportunity" and "pre-shipment controls," not internal taxonomy labels.
+### Dashboard: Dual Tabs
+
+The Dashboard page (`/portal`) has two tabs:
+
+1. **Recovery (default)** — The existing billing audit dashboard: 4 KPI cards (Recovered, In Dispute, Active, Win Rate), surcharge breakdown bar chart, recovery pipeline area chart, top carriers, recent activity, recently recovered table, active disputes table. Data source: AirTable via `fetchRecords` scoped by `clientId`. Answers "what did we recover?" Audience: CFO, accounts payable.
+
+2. **Compliance** — The new governance dashboard. Five governance KPIs (Uninsured Exposure, SOP Compliance, Carrier Authorization, Signature Compliance, Gateway Readiness), Coverage Gap Feed, Warehouse Scorecard, Gateway Readiness "What You Would Have Saved" summary with simulation toggle, Attestation panel. Data source: SQL report functions via `portalDataLoader()`. Answers "are we exposed right now?" Audience: risk manager, compliance officer.
+
+No new sidebar items. "Dashboard" opens to Recovery tab by default.
+
+### Compliance Tab Design Spec
+
+**KPI Row** — Five stat cards, each with 30-day trend arrow:
+
+| KPI | Source | Format |
+|-----|--------|--------|
+| Uninsured Exposure | `getInsuranceExposureReport()` | Dollar amount (total declared value gap, rolling 30d) |
+| SOP Compliance | `policy_backtest_results` (SOP rules) | Percentage (% of shipments where SOPs were followed) |
+| Carrier Authorization | `policy_backtest_results` (carrier rules) | Percentage (% on approved-carrier-only lanes) |
+| Signature Compliance | `shipment_insurance_audit_results` | Percentage (% of high-value shipments with signature) |
+| Gateway Ready | `"Audit Results"` gateway metadata | Percentage (% of shipments that would pass gateway precheck) |
+
+**Coverage Gap Feed** (primary detail, below KPI row) — Table of specific shipments with insurance/contract violations:
+- Columns: Shipment ID, Date, Lane (origin → destination), Declared Value, Actual Value, Violated Clause, Uninsured Exposure ($), Warehouse, Carrier
+- Filters: warehouse, carrier, violation type, date range
+- Sort: most recent first, or by exposure descending
+- Click-through: row opens shipment detail drawer
+- Empty state: "No coverage gaps found in this period"
+
+**Warehouse Scorecard** (secondary panel, below feed) — Per-fulfillment-center compliance matrix:
+- Columns: one per warehouse (e.g., Warehouse A, Warehouse B, Warehouse C)
+- Rows: Packaging compliance, Signature requirement, Declared value accuracy, Carrier selection, Insurance class match
+- Cells: compliance % with color coding (green ≥95%, yellow ≥85%, red <85%) + 30d trend arrow
+- "Worst Offender" row at the top — the warehouse with the lowest aggregate compliance
+- Empty state: "No warehouse data available"
+- Data source: `policy_backtest_results` filtered by SOP and carrier rules, grouped by warehouse
+
+**Gateway Readiness Panel** — "What You Would Have Saved" summary:
+- Hero number: total preventable exposure across period ($X)
+- Simulation toggle: Advisory | Require Approval | Block — recalculates numbers per mode
+- "Top 5 Rules to Activate" list ranked by dollar impact
+- Note: simulation only; actual activation is staff-controlled
+- Empty state: "No gateway-ready rules found. Run a backtest to populate."
+- Data source: `getGatewayReadinessReport()`, `getTopGatewayRuleSuggestions()`
+
+**Attestation Panel** — Governance accountability sidebar card:
+- Current attested policies list with attestation dates
+- "Pending Attestations" count with alert styling when > 0
+- Attest workflow: review extracted rules → sign off → timestamp recorded
+- Empty state: "No policies attested. Upload your insurance policy documents to begin."
+- Data source: `client_policies`, `policy_attestations`
+
+### Multi-Type Upload Page
+
+The Upload page (`/portal/upload`) expands from CSV-only to five document types:
+
+| Type | Pipeline | Status Example |
+|------|----------|----------------|
+| Insurance Policy | AI extraction → attestation queue | "Extracting rules from Zurich Policy.pdf… 3 rules found, 2 confirmed, 1 needs review" |
+| Carrier Contract | AI extraction → attestation queue | Same pipeline as insurance policy |
+| SOP | AI extraction → attestation queue | Same pipeline |
+| Claims History | Dispute evidence | "Uploaded claims-2026.pdf. 12 claims indexed." |
+| Shipment CSV | Ingestion pipeline | "CSV processed. 847 shipments staged." |
+
+Upload history shows: filename, type, upload date, processing status, result summary. Processing status badges: `processing`, `extracted`, `needs_review`, `complete`, `error`.
 
 ## Portal Components
 

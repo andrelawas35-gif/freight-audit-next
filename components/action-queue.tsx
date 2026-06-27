@@ -72,6 +72,13 @@ function ActionSection({ icon, title, blurb, accent, count, totalAmt, items, ren
           : items.map(render)
         }
       </div>
+      {items.length > 0 && items.length < count && (
+        <div style={{ padding: '7px 14px', borderTop: '1px solid var(--line)' }}>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '0.03em' }}>
+            Showing {items.length} of {count.toLocaleString()} items
+          </span>
+        </div>
+      )}
     </Card>
   );
 }
@@ -303,5 +310,4 @@ function StatusBadge({ status }: { status?: string }) {
     </span>
   );
 }
-
 

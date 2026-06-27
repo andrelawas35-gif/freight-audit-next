@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { parseResponse, applyOutcome } from '@/app/(console)/disputes/actions';
+import { parseResponse, applyOutcome } from '@/app/(console)/console/disputes/actions';
 import type { DisputeOutcome } from '@/lib/disputes/response-parser';
 
 type OpenDispute = { id: string; displayId: string; carrier: string; amount: number };

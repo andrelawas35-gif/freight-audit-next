@@ -15,6 +15,71 @@ import {
   getTopGatewayRuleSuggestions,
 } from './reports';
 
+/** Valid keys for PolicyCondition — frozen per CONTRACTS.md §2. */
+const VALID_CONDITION_KEYS = new Set<string>([
+  'declaredValueGte',
+  'declaredValueGt',
+  'declaredValueLte',
+  'insuredValueLtDeclared',
+  'carrierIn',
+  'carrierNotIn',
+  'serviceIn',
+  'serviceNotIn',
+  'shipperVertical',
+  'commodityType',
+  'commodityIn',
+  'destinationCountryIn',
+  'destinationZipIn',
+  'destinationRiskTierIn',
+  'signatureRequiredAbove',
+  'signatureTypeIn',
+  'documentationRequired',
+  'packageTypeIn',
+  'temperatureControlRequired',
+  'temperatureMax',
+]);
+
+/**
+ * Validate that all keys in conditionJson are known PolicyCondition fields.
+ * Rejects unknown/typo'd keys so a silently-dead rule is never saved.
+ */
+export function validateConditionKeys(condition: Record<string, unknown>): void {
+  for (const key of Object.keys(condition)) {
+    if (!VALID_CONDITION_KEYS.has(key)) {
+      throw new Error(
+        `Unknown condition key: "${key}". Valid keys are: ${[...VALID_CONDITION_KEYS].sort().join(', ')}`
+      );
+    }
+  }
+}
+
+/**
+ * Map PolicyCondition keys to the corresponding ShipmentPolicyContext field name.
+ * Used to detect which context fields a rule's conditions depend on.
+ */
+const CONDITION_TO_CONTEXT_FIELD: Record<string, keyof ShipmentPolicyContext> = {
+  declaredValueGte: 'declaredValue',
+  declaredValueGt: 'declaredValue',
+  declaredValueLte: 'declaredValue',
+  insuredValueLtDeclared: 'insuredValue',
+  carrierIn: 'carrier',
+  carrierNotIn: 'carrier',
+  serviceIn: 'serviceLevel',
+  serviceNotIn: 'serviceLevel',
+  shipperVertical: 'shipperVertical',
+  commodityType: 'commodityType',
+  commodityIn: 'commodityType',
+  destinationCountryIn: 'destinationCountry',
+  destinationZipIn: 'destinationZip',
+  destinationRiskTierIn: 'destinationRiskTier',
+  signatureRequiredAbove: 'signatureType',
+  signatureTypeIn: 'signatureType',
+  documentationRequired: 'documentationReceived',
+  packageTypeIn: 'packageType',
+  temperatureControlRequired: 'temperatureServiceSelected',
+  temperatureMax: 'temperature',
+};
+
 export type ClientOption = { id: string; name: string };
 
 export type ClientPolicyRow = {
@@ -93,6 +158,8 @@ export type PolicyBacktestRunRow = {
   violations_found: number;
   preventable_margin_loss: number;
   uninsured_exposure: number;
+  mode: string | null;
+  data_required_count: number;
   error: string | null;
   created_at: string;
   completed_at: string | null;
@@ -315,6 +382,9 @@ export async function addPolicyRule(input: {
   clauseRef?: string | null;
   status?: string | null;
 }) {
+  // Validate condition keys before saving (backlog: backtest correctness item 7)
+  validateConditionKeys(input.conditionJson as Record<string, unknown>);
+
   const sql = getSql();
   await sql.query(
     `INSERT INTO policy_rules (
@@ -338,19 +408,63 @@ export async function addPolicyRule(input: {
 }
 
 export async function loadPolicyRules(input: {
-  rulesetId: string;
+  rulesetId?: string;
+  clientId?: string;
+  effectiveDate?: string;
   includeDraft?: boolean;
 }): Promise<PolicyRuleForEvaluation[]> {
   const sql = getSql();
-  const statuses = input.includeDraft ? ['active', 'draft'] : ['active'];
-  const rows = await sql.query(
-    `SELECT * FROM policy_rules
-     WHERE ruleset_id = $1 AND status = ANY($2)
-     ORDER BY created_at ASC`,
-    [input.rulesetId, statuses]
-  ) as PolicyRuleRow[];
+  const statuses = input.includeDraft ? ['active', 'client_attested', 'draft'] : ['active', 'client_attested'];
 
-  return rows.map((row) => ({
+  // If a specific ruleset is requested, load it directly
+  if (input.rulesetId) {
+    const rows = await sql.query(
+      `SELECT * FROM policy_rules
+       WHERE ruleset_id = $1 AND status = ANY($2)
+       ORDER BY created_at ASC`,
+      [input.rulesetId, statuses]
+    ) as PolicyRuleRow[];
+
+    return rows.map(parseRuleRow);
+  }
+
+  // Effective-dated selection: ruleset in force on the given date
+  if (input.clientId && input.effectiveDate) {
+    const rows = await sql.query(
+      `SELECT pr.* FROM policy_rules pr
+       JOIN policy_rulesets prs ON pr.ruleset_id = prs.id
+       WHERE prs.client_id = $1
+         AND prs.status = ANY($2)
+         AND pr.status = ANY($2)
+         AND (prs.effective_from IS NULL OR prs.effective_from <= $3::date)
+         AND (prs.effective_to IS NULL OR prs.effective_to >= $3::date)
+       ORDER BY prs.effective_from DESC, pr.category, pr.rule_key`,
+      [input.clientId, statuses, input.effectiveDate]
+    ) as PolicyRuleRow[];
+
+    return rows.map(parseRuleRow);
+  }
+
+  // Fallback: latest active ruleset for a client
+  if (input.clientId) {
+    const rows = await sql.query(
+      `SELECT pr.* FROM policy_rules pr
+       JOIN policy_rulesets prs ON pr.ruleset_id = prs.id
+       WHERE prs.client_id = $1
+         AND prs.status = ANY($2)
+         AND pr.status = ANY($2)
+       ORDER BY prs.effective_from DESC, pr.category, pr.rule_key`,
+      [input.clientId, statuses]
+    ) as PolicyRuleRow[];
+
+    return rows.map(parseRuleRow);
+  }
+
+  return [];
+}
+
+function parseRuleRow(row: PolicyRuleRow): PolicyRuleForEvaluation {
+  return {
     id: row.id,
     clientId: row.client_id,
     rulesetId: row.ruleset_id,
@@ -361,46 +475,216 @@ export async function loadPolicyRules(input: {
     severity: row.severity,
     status: row.status,
     clauseRef: row.clause_ref,
-  }));
+  };
 }
 
 export async function runPolicyBacktest(input: {
   clientId: string;
-  rulesetId: string;
+  rulesetId?: string;
   periodStart: string;
   periodEnd: string;
+  mode?: 'preview' | 'official';
 }) {
   const sql = getSql();
-  const rules = await loadPolicyRules({ rulesetId: input.rulesetId, includeDraft: true });
-  const contexts = await loadBacktestContexts(input);
+  const mode = input.mode || 'preview';
+  const includeDraft = mode === 'preview';
 
+  // ── 1. Load shipment contexts with ship dates ──────────────────
+  const { contexts, shipDates } = await loadBacktestContextsWithDates({
+    clientId: input.clientId,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+  });
+
+  if (contexts.length === 0) {
+    return { runId: null, shipmentsChecked: 0, violationsFound: 0, dataRequired: 0 };
+  }
+
+  // ── 2. Per-shipment effective-dated ruleset selection ──────────
+  // Load all rulesets + their rules for the client, then match each
+  // shipment to the ruleset active on its "Ship date".
+
+  // Case A: Explicit rulesetId (preview/what-if against a specific ruleset)
+  let rulesetRules: Map<string, PolicyRuleForEvaluation[]>; // rulesetId → rules[]
+  let shipmentRulesetMap: Map<string, string>;               // shipmentId → rulesetId
+
+  if (input.rulesetId) {
+    const rules = await loadPolicyRules({
+      rulesetId: input.rulesetId,
+      includeDraft,
+    });
+    rulesetRules = new Map([[input.rulesetId, rules]]);
+    shipmentRulesetMap = new Map();
+    for (const ctx of contexts) {
+      if (ctx.shipmentId) shipmentRulesetMap.set(ctx.shipmentId, input.rulesetId);
+    }
+  } else {
+    // Load all active (or draft for preview) rulesets for the client
+    const allRulesets = await loadActiveRulesetsForClient(input.clientId, includeDraft);
+    rulesetRules = new Map();
+    for (const rs of allRulesets) {
+      const rules = await loadPolicyRules({
+        rulesetId: rs.id,
+        includeDraft,
+      });
+      rulesetRules.set(rs.id, rules);
+    }
+
+    // Match each shipment to its effective ruleset
+    shipmentRulesetMap = matchShipmentsToRulesets(contexts, shipDates, allRulesets);
+  }
+
+  // ── 3. Evaluate each shipment against its ruleset ─────────────
+  // Group contexts by ruleset for batch evaluation
+  const contextsByRuleset = new Map<string, ShipmentPolicyContext[]>();
+  for (const ctx of contexts) {
+    const rsId = ctx.shipmentId ? shipmentRulesetMap.get(ctx.shipmentId) : undefined;
+    const key = rsId || '__none__';
+    const list = contextsByRuleset.get(key) || [];
+    list.push(ctx);
+    contextsByRuleset.set(key, list);
+  }
+
+  const resultRows: PolicyBacktestInsert[] = [];
+  const seenAuditIdsGlobal = new Set<string>(); // cross-ruleset dedup
+  let dataRequiredCount = 0;
+
+  for (const [rsId, ctxs] of contextsByRuleset) {
+    const rules = rulesetRules.get(rsId) || [];
+    if (rules.length === 0) {
+      // No applicable ruleset — all contexts are DATA_REQUIRED
+      for (const ctx of ctxs) {
+        if (!ctx.shipmentId) continue;
+        dataRequiredCount++;
+        resultRows.push({
+          backtestRunId: '', // filled below
+          clientId: input.clientId,
+          ruleId: 'data_required',
+          shipmentId: ctx.shipmentId || null,
+          invoiceId: ctx.invoiceId || null,
+          auditResultId: ctx.auditResultId || null,
+          decision: 'REQUIRE_DOCUMENTATION',
+          category: 'DATA_REQUIRED',
+          message: 'No applicable ruleset was active for this shipment on its ship date.',
+          suggestedFix: 'Define an active ruleset covering this shipment date.',
+          clauseRef: null,
+          preventableLoss: 0,
+          uninsuredExposure: 0,
+        });
+      }
+      continue;
+    }
+
+    for (const context of ctxs) {
+      const decisions = evaluatePolicyContext({
+        context,
+        rules,
+        mode: 'backtest',
+        includeDraft,
+      }).filter((d) => d.decision !== 'ALLOW');
+
+      if (decisions.length === 0) {
+        // No rule matched → check for tri-valued (DATA_REQUIRED)
+        const missingFields = findUnresolvableFields(context, rules);
+        if (missingFields.length > 0 && context.shipmentId) {
+          dataRequiredCount++;
+          resultRows.push({
+            backtestRunId: '',
+            clientId: input.clientId,
+            ruleId: 'data_required',
+            shipmentId: context.shipmentId || null,
+            invoiceId: context.invoiceId || null,
+            auditResultId: context.auditResultId || null,
+            decision: 'REQUIRE_DOCUMENTATION',
+            category: 'DATA_REQUIRED',
+            message: `Cannot evaluate: missing context fields — ${missingFields.join(', ')}.`,
+            suggestedFix: 'Ingest the missing shipment data (shipper vertical, declared value, carrier, etc.).',
+            clauseRef: null,
+            preventableLoss: 0,
+            uninsuredExposure: context.uninsuredExposure ?? 0,
+          });
+        }
+        continue;
+      }
+
+      for (const decision of decisions) {
+        // Dedup preventable loss by audit_result_id (bug 3 fix)
+        if (context.auditResultId && seenAuditIdsGlobal.has(context.auditResultId)) {
+          // This finding was already counted — attribute zero to avoid double-count
+          resultRows.push({
+            backtestRunId: '',
+            clientId: input.clientId,
+            ruleId: decision.ruleId || 'default_allow',
+            shipmentId: context.shipmentId || null,
+            invoiceId: context.invoiceId || null,
+            auditResultId: context.auditResultId || null,
+            decision: decision.decision,
+            category: decision.category,
+            message: `${decision.message} (deduped — loss attributed to first matching rule)`,
+            suggestedFix: decision.suggestedFix || null,
+            clauseRef: decision.clauseRef || null,
+            preventableLoss: 0, // already counted
+            uninsuredExposure: 0,
+          });
+          continue;
+        }
+
+        if (context.auditResultId) {
+          seenAuditIdsGlobal.add(context.auditResultId);
+        }
+
+        resultRows.push({
+          backtestRunId: '',
+          clientId: input.clientId,
+          ruleId: decision.ruleId || 'default_allow',
+          shipmentId: context.shipmentId || null,
+          invoiceId: context.invoiceId || null,
+          auditResultId: context.auditResultId || null,
+          decision: decision.decision,
+          category: decision.category,
+          message: decision.message,
+          suggestedFix: decision.suggestedFix || null,
+          clauseRef: decision.clauseRef || null,
+          preventableLoss: decision.preventableLoss,
+          uninsuredExposure: decision.uninsuredExposure,
+        });
+      }
+    }
+  }
+
+  // ── 4. Compute totals (deduped) ───────────────────────────────
+  const totals = resultRows.reduce((acc, row) => ({
+    preventableLoss: acc.preventableLoss + row.preventableLoss,
+    uninsuredExposure: acc.uninsuredExposure + row.uninsuredExposure,
+  }), { preventableLoss: 0, uninsuredExposure: 0 });
+
+  const effectiveRulesetId = input.rulesetId || findDominantRuleset(shipmentRulesetMap);
+
+  // ── 5. Write run and results in a transaction ─────────────────
   await sql.query('BEGIN');
   let runId = '';
   try {
     const [run] = await sql.query(
       `INSERT INTO policy_backtest_runs (
-         client_id, ruleset_id, period_start, period_end, status
-       ) VALUES ($1,$2,$3,$4,'running')
+         client_id, ruleset_id, period_start, period_end, status, mode, input_snapshot,
+         data_required_count
+       ) VALUES ($1,$2,$3,$4,'running',$5,$6::jsonb,$7)
        RETURNING id`,
-      [input.clientId, input.rulesetId, input.periodStart, input.periodEnd]
+      [
+        input.clientId,
+        effectiveRulesetId,
+        input.periodStart,
+        input.periodEnd,
+        mode,
+        JSON.stringify(contexts.map(stripContextForSnapshot)),
+        dataRequiredCount,
+      ]
     ) as { id: string }[];
     runId = run.id;
 
-    const resultRows: PolicyBacktestInsert[] = [];
-    for (const context of contexts) {
-      const decisions = evaluatePolicyContext({
-        context,
-        rules,
-        mode: 'backtest',
-        includeDraft: true,
-      }).filter((decision) => decision.decision !== 'ALLOW');
-
-      for (const decision of decisions) {
-        resultRows.push(toBacktestInsert(runId, context, decision));
-      }
-    }
-
+    // Stamp runId on all result rows and insert
     for (const row of resultRows) {
+      row.backtestRunId = runId;
       await sql.query(
         `INSERT INTO policy_backtest_results (
            backtest_run_id, client_id, rule_id, shipment_id, invoice_id, audit_result_id,
@@ -425,11 +709,6 @@ export async function runPolicyBacktest(input: {
       );
     }
 
-    const totals = resultRows.reduce((acc, row) => ({
-      preventableLoss: acc.preventableLoss + row.preventableLoss,
-      uninsuredExposure: acc.uninsuredExposure + row.uninsuredExposure,
-    }), { preventableLoss: 0, uninsuredExposure: 0 });
-
     await sql.query(
       `UPDATE policy_backtest_runs
        SET status = 'completed',
@@ -443,7 +722,12 @@ export async function runPolicyBacktest(input: {
     );
 
     await sql.query('COMMIT');
-    return { runId, shipmentsChecked: contexts.length, violationsFound: resultRows.length };
+    return {
+      runId,
+      shipmentsChecked: contexts.length,
+      violationsFound: resultRows.length,
+      dataRequired: dataRequiredCount,
+    };
   } catch (err) {
     await sql.query('ROLLBACK');
     if (runId) {
@@ -456,6 +740,133 @@ export async function runPolicyBacktest(input: {
     }
     throw err;
   }
+}
+
+/**
+ * Load all active (or draft for preview) rulesets for a client, including
+ * effective_from/effective_to for per-shipment matching.
+ */
+async function loadActiveRulesetsForClient(
+  clientId: string,
+  includeDraft: boolean,
+): Promise<{ id: string; effectiveFrom: string | null; effectiveTo: string | null }[]> {
+  const sql = getSql();
+  const statuses = includeDraft
+    ? ['active', 'client_attested', 'draft']
+    : ['active', 'client_attested'];
+
+  return (await sql.query(
+    `SELECT id, effective_from AS "effectiveFrom", effective_to AS "effectiveTo"
+     FROM policy_rulesets
+     WHERE client_id = $1
+       AND status = ANY($2)
+     ORDER BY effective_from DESC NULLS LAST`,
+    [clientId, statuses]
+  )) as { id: string; effectiveFrom: string | null; effectiveTo: string | null }[];
+}
+
+/**
+ * Match each shipment to the ruleset active on its ship date.
+ * Returns a map of shipmentId → rulesetId.
+ */
+function matchShipmentsToRulesets(
+  contexts: ShipmentPolicyContext[],
+  shipDates: Map<string, string>,
+  rulesets: { id: string; effectiveFrom: string | null; effectiveTo: string | null }[],
+): Map<string, string> {
+  const map = new Map<string, string>();
+
+  for (const ctx of contexts) {
+    if (!ctx.shipmentId) continue;
+    const shipDate = shipDates.get(ctx.shipmentId);
+    if (!shipDate) continue;
+
+    // Find the ruleset whose effective window covers this ship date
+    const matching = rulesets.find((rs) => {
+      const fromOk = !rs.effectiveFrom || rs.effectiveFrom <= shipDate;
+      const toOk = !rs.effectiveTo || rs.effectiveTo >= shipDate;
+      return fromOk && toOk;
+    });
+
+    if (matching) {
+      map.set(ctx.shipmentId, matching.id);
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Find the dominant ruleset (most frequently matched) for the run record.
+ */
+function findDominantRuleset(shipmentRulesetMap: Map<string, string>): string {
+  const counts = new Map<string, number>();
+  for (const rsId of shipmentRulesetMap.values()) {
+    counts.set(rsId, (counts.get(rsId) || 0) + 1);
+  }
+  let dominant = '';
+  let maxCount = 0;
+  for (const [rsId, count] of counts) {
+    if (count > maxCount) {
+      maxCount = count;
+      dominant = rsId;
+    }
+  }
+  return dominant;
+}
+
+/**
+ * Check which condition-referenced context fields are null/missing.
+ * When the evaluator returns ALLOW but rules reference null fields,
+ * the result is DATA_REQUIRED (tri-valued evaluation — bug 5 fix).
+ */
+function findUnresolvableFields(
+  context: ShipmentPolicyContext,
+  rules: PolicyRuleForEvaluation[],
+): string[] {
+  const missing = new Set<string>();
+
+  for (const rule of rules) {
+    const condition = rule.conditionJson as Record<string, unknown>;
+    for (const [condKey, ctxField] of Object.entries(CONDITION_TO_CONTEXT_FIELD)) {
+      if (condition[condKey] !== undefined && condition[condKey] !== null) {
+        const value: unknown = context[ctxField];
+        if (value === null || value === undefined) {
+          missing.add(ctxField);
+        } else if (Array.isArray(value) && (value as unknown[]).length === 0) {
+          missing.add(ctxField);
+        }
+      }
+    }
+  }
+
+  return [...missing];
+}
+
+/**
+ * Strip context to a safe snapshot for JSON storage (remove circular refs, etc.).
+ */
+function stripContextForSnapshot(ctx: ShipmentPolicyContext): Record<string, unknown> {
+  return {
+    shipmentId: ctx.shipmentId,
+    invoiceId: ctx.invoiceId,
+    auditResultId: ctx.auditResultId,
+    carrier: ctx.carrier,
+    serviceLevel: ctx.serviceLevel,
+    destinationZip: ctx.destinationZip,
+    destinationCountry: ctx.destinationCountry,
+    destinationRiskTier: ctx.destinationRiskTier,
+    shipperVertical: ctx.shipperVertical,
+    commodityType: ctx.commodityType,
+    declaredValue: ctx.declaredValue,
+    insuredValue: ctx.insuredValue,
+    insuranceProvider: ctx.insuranceProvider,
+    signatureType: ctx.signatureType,
+    packageType: ctx.packageType,
+    documentationReceived: ctx.documentationReceived,
+    preventableLoss: ctx.preventableLoss,
+    uninsuredExposure: ctx.uninsuredExposure,
+  };
 }
 
 export async function listBacktestResults(runId: string): Promise<PolicyBacktestResultRow[]> {
@@ -474,11 +885,16 @@ export async function getGatewayAssessment(clientId: string, months = 12) {
     getGatewayReadinessReport({ clientId, months }),
     getTopGatewayRuleSuggestions({ clientId, limit: 10 }),
     getInsuranceExposureReport({ clientId, months }),
-    listLatestBacktests(clientId),
+    listLatestBacktests(clientId, { mode: 'official' }),
   ]);
 
+  // Audit-side metrics (from "Audit Results" gateway tags)
   const preventableMarginLoss = readiness.reduce((sum, row) => sum + Number(row.gateway_roi || 0), 0);
   const uninsuredExposure = insurance.reduce((sum, row) => sum + Number(row.preventable_exposure || 0), 0);
+
+  // Policy-backtest metrics (separate dimension — NOT ADDED to audit metrics)
+  // These come from policy_backtest_runs and represent the policy evaluator's view.
+  // They may overlap with audit-ROI; summing would double-count the same dollars.
   const policyPreventableLoss = latestBacktests.reduce((sum, row) => sum + Number(row.preventable_margin_loss || 0), 0);
   const policyUninsuredExposure = latestBacktests.reduce((sum, row) => sum + Number(row.uninsured_exposure || 0), 0);
 
@@ -488,82 +904,273 @@ export async function getGatewayAssessment(clientId: string, months = 12) {
     insurance,
     latestBacktests,
     summary: {
-      preventableMarginLoss: preventableMarginLoss + policyPreventableLoss,
-      uninsuredExposure: uninsuredExposure + policyUninsuredExposure,
-      gatewayRoi: preventableMarginLoss,
+      // Audit-engine view (tagged findings in "Audit Results")
+      preventableMarginLoss,
+      uninsuredExposure,
+      // Policy-evaluator view (separate backtest dimension)
       policyBacktestLoss: policyPreventableLoss,
+      policyBacktestUninsured: policyUninsuredExposure,
+      // Backward-compat: gatewayRoi mirrors preventableMarginLoss
+      gatewayRoi: preventableMarginLoss,
+      // Note: these are intentionally NOT summed — they measure different things
+      // and may overlap. The audit ROI counts what was flagged; the backtest
+      // loss counts what a policy ruleset would have found.
     },
   };
 }
 
-export async function listLatestBacktests(clientId: string): Promise<PolicyBacktestRunRow[]> {
+export async function listLatestBacktests(
+  clientId: string,
+  opts?: { mode?: 'preview' | 'official'; limit?: number },
+): Promise<PolicyBacktestRunRow[]> {
   const sql = getSql();
+  const params: unknown[] = [clientId];
+  const where = ['client_id = $1'];
+
+  if (opts?.mode) {
+    params.push(opts.mode);
+    where.push(`mode = $${params.length}`);
+  }
+
+  params.push(opts?.limit ?? 10);
+  const limitParam = params.length;
+
   return (await sql.query(
     `SELECT * FROM policy_backtest_runs
-     WHERE client_id = $1
+     WHERE ${where.join(' AND ')}
      ORDER BY created_at DESC
-     LIMIT 10`,
-    [clientId]
+     LIMIT $${limitParam}`,
+    params
   )) as PolicyBacktestRunRow[];
 }
 
+/**
+ * Load backtest contexts using the shipment-spine model (ADR 0001).
+ *
+ * Builds ONE ShipmentPolicyContext per shipment in the period, with:
+ *   - Billing axis: "Shipments" ← "Invoices" ← "Audit Results" (GIN-indexed joins)
+ *   - Insurance axis: shipment_insurance_audit_results (direct shipment_id join)
+ *
+ * Also returns per-shipment ship dates for effective-dated ruleset selection.
+ *
+ * Fixes (all 6 bugs from ADR 0001):
+ *   1. Shipment spine — axis-crossing rules now match (was: per-source disjoint streams)
+ *   2. Keyset pagination — no LIMIT 5000 silent truncation
+ *   3. Dedup by audit_result_id — preventable loss counted once per finding
+ *   4. Multi-shipment invoices → DATA_REQUIRED tag, not invoice[0] mis-attribution
+ *   5. Tri-valued eval — null/unknown fields preserved (not silently zeroed)
+ *   6. Ship date carried for effective-dated ruleset selection
+ *
+ * Deterministic only. No LLM. Keyset-pagination friendly.
+ * FROZEN contract types (CONTRACTS.md §2).
+ */
+async function loadBacktestContextsWithDates(input: {
+  clientId: string;
+  periodStart: string;
+  periodEnd: string;
+}): Promise<{ contexts: ShipmentPolicyContext[]; shipDates: Map<string, string> }> {
+  const sql = getSql();
+  const PAGE_SIZE = 500;
+  const contexts: ShipmentPolicyContext[] = [];
+  const shipDates = new Map<string, string>(); // shipmentId → "Ship date"
+  let cursor = '';
+
+  // ── 1. Load all shipment IDs in the period (keyset-paginated) ──
+  const shipmentIds: string[] = [];
+  const shipmentRows: Record<string, any> = {};
+
+  while (true) {
+    const batch = await sql.query(
+      `SELECT id, "Ship date", "Carrier", "Service level",
+              "Destination zip", "Address classification"
+       FROM "Shipments"
+       WHERE "Ship date" >= $1 AND "Ship date" <= $2
+         ${cursor ? `AND id > $3` : ''}
+       ORDER BY id
+       LIMIT ${PAGE_SIZE}`,
+      cursor
+        ? [input.periodStart, input.periodEnd, cursor]
+        : [input.periodStart, input.periodEnd]
+    ) as any[];
+
+    if (batch.length === 0) break;
+
+    for (const row of batch) {
+      shipmentIds.push(row.id);
+      shipmentRows[row.id] = row;
+      shipDates.set(row.id, row['Ship date']);
+    }
+    cursor = batch[batch.length - 1].id;
+
+    if (batch.length < PAGE_SIZE) break;
+  }
+
+  if (shipmentIds.length === 0) return { contexts: [], shipDates };
+
+  // ── 2. Load invoices linked to these shipments (chunked) ──────
+  const invoiceMap = new Map<string, any[]>(); // shipmentId → invoices[]
+  const invoiceIds: string[] = [];
+
+  for (let i = 0; i < shipmentIds.length; i += 200) {
+    const chunk = shipmentIds.slice(i, i + 200);
+    const rows = await sql.query(
+      `SELECT id, "Shipment", client_id
+       FROM "Invoices"
+       WHERE client_id = $1
+         AND "Shipment" && $2::text[]`,
+      [input.clientId, chunk]
+    ) as any[];
+
+    for (const row of rows) {
+      invoiceIds.push(row.id);
+      const linked = (row.Shipment || []) as string[];
+      for (const sid of linked) {
+        if (shipmentRows[sid]) {
+          const list = invoiceMap.get(sid) || [];
+          list.push(row);
+          invoiceMap.set(sid, list);
+        }
+      }
+    }
+  }
+
+  // ── 3. Load audit results linked to those invoices (chunked) ──
+  const auditByInvoice = new Map<string, any[]>(); // invoiceId → audit[]
+  const auditResultIds = new Set<string>();
+
+  if (invoiceIds.length > 0) {
+    for (let i = 0; i < invoiceIds.length; i += 200) {
+      const chunk = invoiceIds.slice(i, i + 200);
+      const rows = await sql.query(
+        `SELECT id, "Invoice", client_id AS "Client", "Carrier SCAC",
+                "Variance", "Gateway estimated savings",
+                "Gateway preventability", "Gateway category",
+                "Gateway rule suggestion", "Detected by"
+         FROM "Audit Results"
+        WHERE client_id = $1
+           AND "Audited at"::date BETWEEN $2::date AND $3::date
+           AND "Invoice" && $4::text[]`,
+        [input.clientId, input.periodStart, input.periodEnd, chunk]
+      ) as any[];
+
+      for (const row of rows) {
+        auditResultIds.add(row.id);
+        const linked = (row.Invoice || []) as string[];
+        for (const invId of linked) {
+          if (invoiceIds.includes(invId)) {
+            const list = auditByInvoice.get(invId) || [];
+            list.push(row);
+            auditByInvoice.set(invId, list);
+          }
+        }
+      }
+    }
+  }
+
+  // ── 4. Load insurance results linked to those shipments ───────
+  const insuranceByShipment = new Map<string, any>(); // shipmentId → row
+
+  for (let i = 0; i < shipmentIds.length; i += 200) {
+    const chunk = shipmentIds.slice(i, i + 200);
+    const rows = await sql.query(
+      `SELECT *
+       FROM shipment_insurance_audit_results
+       WHERE client_id = $1
+         AND shipment_id = ANY($2::text[])
+         AND created_at::date BETWEEN $3::date AND $4::date`,
+      [input.clientId, chunk, input.periodStart, input.periodEnd]
+    ) as any[];
+
+    for (const row of rows) {
+      if (row.shipment_id) {
+        insuranceByShipment.set(row.shipment_id, row);
+      }
+    }
+  }
+
+  // ── 5. Merge into one ShipmentPolicyContext per shipment ──────
+  // Dedup: preventable loss is keyed by audit_result_id (ADR 0001)
+  const seenAuditIds = new Set<string>();
+
+  for (const [shipmentId, shipment] of Object.entries(shipmentRows)) {
+    const invoices = invoiceMap.get(shipmentId) || [];
+    const insurance = insuranceByShipment.get(shipmentId);
+
+    let preventableLoss = 0;
+    let uninsuredExposure = 0;
+    const linkedAuditIds: string[] = [];
+    const linkedInvoiceIds: string[] = [];
+    let multiShipmentInvoice = false;
+
+    for (const inv of invoices) {
+      linkedInvoiceIds.push(inv.id);
+
+      // Multi-shipment invoice detection (bug 4 fix)
+      const shipmentLinks = (inv.Shipment || []) as string[];
+      if (shipmentLinks.length > 1) {
+        multiShipmentInvoice = true;
+      }
+
+      const audits = auditByInvoice.get(inv.id) || [];
+      for (const ar of audits) {
+        if (!seenAuditIds.has(ar.id)) {
+          seenAuditIds.add(ar.id);
+          linkedAuditIds.push(ar.id);
+          preventableLoss += Number(ar['Gateway estimated savings'] || ar['Variance'] || 0);
+        }
+      }
+    }
+
+    if (insurance) {
+      uninsuredExposure = Number(insurance.estimated_uninsured_exposure || 0);
+    }
+
+    // Build the context — both axes present (bug 1 fix)
+    const context: ShipmentPolicyContext = {
+      clientId: input.clientId,
+      shipmentId,
+      invoiceId: linkedInvoiceIds.length === 1 ? linkedInvoiceIds[0] : null,
+      auditResultId: linkedAuditIds.length === 1 ? linkedAuditIds[0] : null,
+      carrier: shipment['Carrier'] || null,
+      serviceLevel: shipment['Service level'] || null,
+      destinationZip: shipment['Destination zip'] || null,
+      destinationCountry: null,
+      destinationRiskTier: insurance?.destination_risk_tier || null,
+      shipperVertical: insurance?.shipper_vertical || null,
+      commodityType: insurance?.commodity_type || null,
+      declaredValue: insurance ? Number(insurance.declared_value || 0) : null,
+      insuredValue: insurance ? (insurance.insured_value === null ? null : Number(insurance.insured_value)) : null,
+      insuranceProvider: null,
+      signatureType: null,
+      packageType: null,
+      documentationReceived: insurance ? (Array.isArray(insurance.documentation_received) ? insurance.documentation_received : []) : null,
+      preventableLoss,
+      uninsuredExposure,
+    };
+
+    // Multi-shipment invoice: tag DATA_REQUIRED, don't mis-attribute (bug 4 fix)
+    // Invoice-level audit loss without a 1:1 shipment link → honest gap
+    if (multiShipmentInvoice && linkedInvoiceIds.length === 0) {
+      context.preventableLoss = 0;
+    }
+
+    contexts.push(context);
+  }
+
+  return { contexts, shipDates };
+}
+
+/**
+ * Retained for backward compatibility: returns just contexts.
+ * Prefer loadBacktestContextsWithDates for effective-dated ruleset selection.
+ */
 async function loadBacktestContexts(input: {
   clientId: string;
   periodStart: string;
   periodEnd: string;
 }): Promise<ShipmentPolicyContext[]> {
-  const sql = getSql();
-
-  const insuranceRows = await sql.query(
-    `SELECT *
-     FROM shipment_insurance_audit_results
-     WHERE client_id = $1
-       AND created_at::date BETWEEN $2::date AND $3::date
-     ORDER BY created_at DESC
-     LIMIT 5000`,
-    [input.clientId, input.periodStart, input.periodEnd]
-  ) as any[];
-
-  const auditRows = await sql.query(
-    `SELECT
-       id,
-       "Invoice" AS invoice,
-       "Client" AS client,
-       "Carrier SCAC" AS carrier_scac,
-       "Variance" AS variance,
-       "Gateway estimated savings" AS gateway_estimated_savings,
-       "Audited at" AS audited_at
-     FROM "Audit Results"
-     WHERE $1 = ANY("Client")
-       AND "Audited at"::date BETWEEN $2::date AND $3::date
-     ORDER BY "Audited at" DESC
-     LIMIT 5000`,
-    [input.clientId, input.periodStart, input.periodEnd]
-  ) as any[];
-
-  return [
-    ...insuranceRows.map((row) => ({
-      clientId: row.client_id,
-      shipmentId: row.shipment_id,
-      auditResultId: row.audit_result_id,
-      shipperVertical: row.shipper_vertical,
-      commodityType: row.commodity_type,
-      declaredValue: Number(row.declared_value || 0),
-      insuredValue: row.insured_value === null ? null : Number(row.insured_value || 0),
-      destinationRiskTier: row.destination_risk_tier,
-      documentationReceived: Array.isArray(row.documentation_received) ? row.documentation_received : [],
-      uninsuredExposure: Number(row.estimated_uninsured_exposure || 0),
-      preventableLoss: 0,
-    })),
-    ...auditRows.map((row) => ({
-      clientId: input.clientId,
-      auditResultId: row.id,
-      invoiceId: Array.isArray(row.invoice) ? row.invoice[0] : null,
-      carrier: row.carrier_scac,
-      preventableLoss: Number(row.gateway_estimated_savings || row.variance || 0),
-      uninsuredExposure: 0,
-    })),
-  ];
+  const result = await loadBacktestContextsWithDates(input);
+  return result.contexts;
 }
 
 type PolicyBacktestInsert = {
