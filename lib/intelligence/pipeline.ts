@@ -9,7 +9,7 @@
  */
 
 import { tokenize, tokenizeAll } from './tokenizer';
-import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
+import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, incrementMatchCount, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
 import { classifyClause, type T2Result, type T2MappedResult } from './classifier';
 import { storeUnmappedClause, upsertTaxonomyCandidate } from './policy-service';
 import type { PolicyCondition, PolicyAction } from './policy-evaluator';
@@ -220,6 +220,8 @@ export async function classify(
       const t3Match = await findSimilarClauses(embedding);
       if (t3Match.matched) {
         stats.t3Hits++;
+        // Bump match_count on the matched row (fire-and-forget)
+        incrementMatchCount(t3Match.clauseText, t3Match.ruleKey);
         results[i] = {
           clauseText,
           tier: 'T3',
@@ -234,6 +236,9 @@ export async function classify(
       if (t3Match.nearestSimilarity !== null && t3Match.nearestSimilarity >= 0.85) {
         // Near-match: flag for staff review, still try T2
         stats.t3NearMatches++;
+        if (t3Match.clauseText && t3Match.ruleKey) {
+          incrementMatchCount(t3Match.clauseText, t3Match.ruleKey);
+        }
         results[i] = {
           clauseText,
           tier: 'T3',

@@ -28,8 +28,8 @@ const NEAR_MATCH_LOWER = 0.85;
 export type EmbeddingSource = 'tokenizer' | 'llm_mapper';
 
 export type VectorMatchResult =
-  | { matched: true; similarity: number; ruleKey: string; conditionJson: PolicyCondition; source: EmbeddingSource; matchCount: number }
-  | { matched: false; nearestSimilarity: number | null; ruleKey?: string; conditionJson?: PolicyCondition };
+  | { matched: true; similarity: number; ruleKey: string; clauseText: string; conditionJson: PolicyCondition; source: EmbeddingSource; matchCount: number }
+  | { matched: false; nearestSimilarity: number | null; ruleKey?: string; clauseText?: string; conditionJson?: PolicyCondition };
 
 export type T3Result =
   | { tier: 'T3'; source: 'VECTOR_MATCH'; confidence: number; ruleKey: string; conditionJson: PolicyCondition; action?: PolicyAction; matchCount: number }
@@ -165,6 +165,7 @@ export async function findSimilarClauses(embedding: number[] | null): Promise<Ve
       matched: true,
       similarity: match.similarity,
       ruleKey: match.ruleKey,
+      clauseText: match.clauseText,
       conditionJson: match.conditionJson,
       source: match.source,
       matchCount: match.matchCount,
@@ -175,6 +176,7 @@ export async function findSimilarClauses(embedding: number[] | null): Promise<Ve
     matched: false,
     nearestSimilarity: match.similarity,
     ruleKey: match.ruleKey,
+    clauseText: match.clauseText,
     conditionJson: match.conditionJson,
   };
 }
@@ -261,5 +263,22 @@ export async function getHighMatchCandidates(
   } catch (err) {
     console.warn('[T3] getHighMatchCandidates failed:', err instanceof Error ? err.message : err);
     return [];
+  }
+}
+
+/**
+ * Increment match_count for an embedding row on a real T3 hit.
+ * Identifies the row by (clause_text, classified_rule_key) — the unique constraint.
+ */
+export async function incrementMatchCount(clauseText: string, ruleKey: string): Promise<void> {
+  const sql = getSql();
+  try {
+    await sql.query(`
+      UPDATE clause_embeddings
+      SET match_count = match_count + 1, last_matched_at = NOW()
+      WHERE clause_text = $1 AND classified_rule_key = $2
+    `, [clauseText, ruleKey]);
+  } catch (err) {
+    console.warn('[T3] incrementMatchCount failed:', err instanceof Error ? err.message : err);
   }
 }
