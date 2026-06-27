@@ -17,15 +17,26 @@ Auth.js v5 beta (`next-auth@5.0.0-beta.31`).
 
 ## Route Protection
 
-| Path | Access |
-|------|--------|
-| `/login`, `/signup` | Public; redirect if already logged in |
-| `/portal/*` | Any authenticated user |
-| `/*` console routes | `staff` role only |
-| `/api/ingest/*` | `x-ingest-secret` header |
-| `/api/run-audit` | Staff session or `x-ingest-secret` |
-| `/api/run-audit/process` | `x-ingest-secret` or `CRON_SECRET` bearer |
-| `/api/cron/*` | `CRON_SECRET` bearer |
+The `authorized` callback in `auth.config.ts` gates all routes. Public
+routes are allow-listed **before** the `!isLoggedIn` check so that
+webhooks, crons, health probes, and the marketing site are accessible
+without authentication. Each API route has its own secondary auth guard
+(headers, secrets, or session checks).
+
+| Path | Middleware Auth | Role Gate | Secondary Auth |
+|------|----------------|-----------|----------------|
+| `/api/auth/*` | No | — | Auth.js internal |
+| `/login`, `/signup` | No (public) | Redirect if logged in | — |
+| `/api/ingest/*` | No | — | `x-ingest-secret` |
+| `/api/cron/*` | No | — | `CRON_SECRET` bearer |
+| `/api/run-audit` | No | — | Staff session or `x-ingest-secret` |
+| `/api/run-audit/process` | No | — | `x-ingest-secret` or `CRON_SECRET` bearer |
+| `/api/run-audit/status` | No | — | Staff session or `x-ingest-secret` |
+| `/api/v1/precheck` | No | — | `x-gateway-api-key` or staff session |
+| `/api/health` | No | — | None (liveness probe) |
+| `/*` (marketing) | No | — | — |
+| `/portal/*` | Yes | Any authenticated | — |
+| `/console/*` | Yes | `staff` | — |
 
 ## Session Shape
 

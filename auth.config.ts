@@ -28,6 +28,10 @@ export const authConfig = {
       const role = (auth?.user as { role?: string } | undefined)?.role;
       const { pathname } = nextUrl;
 
+      // ── 1. Auth.js handler — must be public (sign in/out, session, csrf) ──
+      if (pathname.startsWith('/api/auth/')) return true;
+
+      // ── 2. Auth pages (login, signup) — public; redirect if already signed in ──
       const isAuthPage =
         pathname.startsWith('/login') || pathname.startsWith('/signup');
 
@@ -40,12 +44,36 @@ export const authConfig = {
         return true;
       }
 
+      // ── 3. API routes with their own auth — public at middleware level ──
+      if (
+        pathname.startsWith('/api/ingest/') ||
+        pathname.startsWith('/api/cron/') ||
+        pathname.startsWith('/api/run-audit/') ||
+        pathname.startsWith('/api/v1/precheck') ||
+        pathname === '/api/health'
+      ) {
+        return true;
+      }
+
+      // ── 4. Marketing site — public ──
+      const isMarketingPath =
+        pathname === '/' ||
+        pathname.startsWith('/about') ||
+        pathname.startsWith('/pricing') ||
+        pathname.startsWith('/blog') ||
+        pathname.startsWith('/contact') ||
+        pathname.startsWith('/terms') ||
+        pathname.startsWith('/privacy');
+
+      if (isMarketingPath) return true;
+
+      // ── 5. Require auth for all remaining routes ──
       if (!isLoggedIn) return false; // → redirected to signIn page
 
-      // Portal is open to any authenticated user
+      // ── 6. Portal is open to any authenticated user ──
       if (pathname.startsWith('/portal')) return true;
 
-      // Console is staff only
+      // ── 7. Console is staff only ──
       if (pathname.startsWith('/console')) {
         if (role !== 'staff') {
           return Response.redirect(new URL('/portal', nextUrl));
@@ -53,8 +81,8 @@ export const authConfig = {
         return true;
       }
 
-      // Marketing pages + API routes are public
-      return true;
+      // ── 8. Catch-all: deny (new routes default to protected) ──
+      return false;
     },
     jwt({ token, user }) {
       if (user) {
