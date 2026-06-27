@@ -77,6 +77,7 @@ export async function drainBuffer(): Promise<number> {
              ${JSON.stringify(entry.violations)}::jsonb,
              ${entry.ruleset_version}, ${entry.degraded},
              ${entry.ruleset_snapshot_id}, ${entry.created_at}::timestamptz)
+          ON CONFLICT (id) DO NOTHING
         `;
         await sql`COMMIT`;
         drained++;
