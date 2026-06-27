@@ -342,6 +342,60 @@ export async function addPolicyDocument(input: {
   );
 }
 
+/**
+ * Find or create a per-client draft ruleset for client-defined rules (ADR 0014).
+ * If no draft exists, creates one. If an active ruleset exists, copies its rules
+ * forward into the new draft so client-defined rules are additive, not destructive.
+ */
+export async function findOrCreateClientDraftRuleset(clientId: string): Promise<string> {
+  const sql = getSql();
+
+  // 1. Look for existing draft ruleset
+  const existing = await sql.query(`
+    SELECT id FROM policy_rulesets
+    WHERE client_id = $1 AND status = 'draft' AND deleted_at IS NULL
+    ORDER BY created_at DESC LIMIT 1
+  `, [clientId]) as { id: string }[];
+
+  if (existing.length > 0) return existing[0].id;
+
+  // 2. Find the active ruleset (to copy its rules forward)
+  const active = await sql.query(`
+    SELECT id FROM policy_rulesets
+    WHERE client_id = $1 AND status = 'active' AND deleted_at IS NULL
+    ORDER BY effective_from DESC NULLS LAST, created_at DESC LIMIT 1
+  `, [clientId]) as { id: string }[];
+
+  // 3. Create the draft ruleset
+  const draftId = await createRuleset({
+    clientId,
+    version: 'Client-Defined',
+    status: 'draft',
+  });
+
+  // 4. Copy active rules forward into the new draft (additive foundation)
+  if (active.length > 0) {
+    await sql.query(`
+      INSERT INTO policy_rules (
+        id, client_id, ruleset_id, policy_id, document_id,
+        rule_key, category, condition_json, action_json,
+        severity, clause_ref, status, signal_source,
+        source_clause_text, confidence, created_at, updated_at
+      )
+      SELECT
+        'pr' || replace(gen_random_uuid()::text, '-', ''),
+        client_id, $2, policy_id, document_id,
+        rule_key, category, condition_json, action_json,
+        severity, clause_ref, 'draft', signal_source,
+        source_clause_text, confidence, NOW(), NOW()
+      FROM policy_rules
+      WHERE ruleset_id = $1 AND status = 'active' AND deleted_at IS NULL
+    `, [active[0].id, draftId]);
+  }
+
+  return draftId;
+}
+
 export async function createRuleset(input: {
   clientId: string;
   version: string;

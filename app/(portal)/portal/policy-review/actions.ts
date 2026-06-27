@@ -13,6 +13,7 @@
 
 import { auth } from '@/auth';
 import { getSql } from '@/lib/db';
+import { findOrCreateClientDraftRuleset } from '@/lib/intelligence/policy-service';
 import { revalidatePath } from 'next/cache';
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -83,6 +84,9 @@ export async function defineClauseAction(input: DefineClauseInput): Promise<T4Ac
     await sql.query('BEGIN', []);
 
     try {
+      // Find or create the per-client draft ruleset (ADR 0014)
+      const rulesetId = await findOrCreateClientDraftRuleset(clientId);
+
       // Update the scope exclusion record to 'defined' status
       const updateResult = await sql.query(`
         UPDATE policy_scope_exclusions
@@ -109,7 +113,7 @@ export async function defineClauseAction(input: DefineClauseInput): Promise<T4Ac
           source_clause_text, confidence
         ) VALUES (
           'pr' || replace(gen_random_uuid()::text, '-', ''),
-          $1, NULL, NULL,
+          $1, $6, NULL,
           $2, 'client_defined', $3::jsonb, $4::jsonb,
           'warn', NULL, 'draft', 'CLIENT_DEFINED',
           $5, 0.85
@@ -120,6 +124,7 @@ export async function defineClauseAction(input: DefineClauseInput): Promise<T4Ac
         JSON.stringify(input.conditionJson),
         JSON.stringify({ action: 'WARN', message: `Client-defined rule: ${input.reasoning || input.ruleKey}` }),
         input.clauseText,
+        rulesetId,
       ]);
 
       await sql.query('COMMIT', []);
