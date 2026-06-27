@@ -9,7 +9,7 @@
  */
 
 import { tokenize, tokenizeAll } from './tokenizer';
-import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, type VectorMatchResult } from './embeddings';
+import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
 import { classifyClause, type T2Result, type T2MappedResult } from './classifier';
 import type { PolicyCondition, PolicyAction } from './policy-evaluator';
 import type { TokenizerHit } from './tokenizer';
@@ -314,4 +314,19 @@ async function storeT2Embedding(clauseText: string, t2Result: T2MappedResult): P
   } catch (err) {
     console.warn('[Pipeline] T2→T3 storage failed (non-fatal):', err instanceof Error ? err.message : err);
   }
+}
+
+// ── T3 → T1 Feedback Loop ─────────────────────────────────────────
+
+import { getKnownRuleKeys } from './tokenizer';
+
+export type { HighMatchCandidate } from './embeddings';
+
+/**
+ * Return high-match T3 candidates that don't have a corresponding T1 pattern.
+ * This is the "Consider adding T1 pattern" surface for the staff console.
+ */
+export async function getT3FeedbackCandidates(minCount: number = 10): Promise<HighMatchCandidate[]> {
+  const knownKeys = getKnownRuleKeys();
+  return getHighMatchCandidates(minCount, knownKeys);
 }

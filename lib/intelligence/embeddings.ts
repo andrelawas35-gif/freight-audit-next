@@ -203,3 +203,64 @@ export async function storeClauseEmbedding(entry: StoredEmbedding): Promise<void
     console.warn('[T3] Failed to store embedding (pgvector may not be enabled):', err instanceof Error ? err.message : err);
   }
 }
+
+// ── T3 → T1 Feedback Loop ─────────────────────────────────────────
+
+export interface HighMatchCandidate {
+  clauseText: string;
+  classifiedRuleKey: string;
+  classifiedConditionJson: PolicyCondition;
+  classificationSource: EmbeddingSource;
+  matchCount: number;
+  lastMatchedAt: string;
+  firstSeenAt: string;
+}
+
+/**
+ * Return clauses from clause_embeddings whose match_count >= minCount,
+ * excluding those whose rule_key already exists in the T1 tokenizer.
+ * Used by the staff console "Consider adding T1 pattern" surface.
+ */
+export async function getHighMatchCandidates(
+  minCount: number = 10,
+  excludeRuleKeys?: Set<string>,
+): Promise<HighMatchCandidate[]> {
+  const sql = getSql();
+  try {
+    const rows = await sql.query(
+      `SELECT 
+        clause_text,
+        classified_rule_key,
+        classified_condition_json,
+        classification_source,
+        match_count,
+        last_matched_at,
+        first_seen_at
+      FROM clause_embeddings
+      WHERE match_count >= $1
+        AND deleted_at IS NULL
+      ORDER BY match_count DESC, last_matched_at DESC
+      LIMIT 100`,
+      [minCount]
+    );
+
+    const candidates = (rows as Record<string, unknown>[]).map((row) => ({
+      clauseText: row.clause_text as string,
+      classifiedRuleKey: row.classified_rule_key as string,
+      classifiedConditionJson: row.classified_condition_json as PolicyCondition,
+      classificationSource: row.classification_source as EmbeddingSource,
+      matchCount: row.match_count as number,
+      lastMatchedAt: String(row.last_matched_at || ''),
+      firstSeenAt: String(row.first_seen_at || ''),
+    }));
+
+    // Filter out already-known T1 patterns
+    if (excludeRuleKeys && excludeRuleKeys.size > 0) {
+      return candidates.filter(c => !excludeRuleKeys.has(c.classifiedRuleKey));
+    }
+    return candidates;
+  } catch (err) {
+    console.warn('[T3] getHighMatchCandidates failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}

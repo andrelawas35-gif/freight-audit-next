@@ -1,4 +1,5 @@
 import { PoliciesDashboard } from '@/components/console/policy-intelligence';
+import { T3FeedbackPanel } from '@/components/console/t3-feedback-panel';
 import { ConsoleErrorState } from '@/components/ui/primitives';
 import { listClientOptions, listPolicies } from '@/lib/intelligence/policy-service';
 
@@ -11,7 +12,12 @@ export default async function PoliciesPage() {
       listClientOptions(),
     ]);
 
-    return <PoliciesDashboard policies={policies} clients={clients} />;
+    return (
+      <div className="space-y-6">
+        <T3FeedbackPanel />
+        <PoliciesDashboard policies={policies} clients={clients} />
+      </div>
+    );
   } catch (err) {
     return (
       <ConsoleErrorState

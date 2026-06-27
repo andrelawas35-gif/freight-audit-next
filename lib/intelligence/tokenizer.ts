@@ -19,6 +19,14 @@ import type { PolicyCondition, PolicyAction } from './policy-evaluator';
 
 // ── Public types ──────────────────────────────────────────────────────
 
+/** Return all rule_keys the T1 tokenizer can already identify.
+ *  Used by the T3→T1 feedback loop to avoid suggesting patterns that already exist. */
+export function getKnownRuleKeys(): Set<string> {
+  const keys = new Set<string>();
+  for (const p of PATTERNS) keys.add(p.ruleKey);
+  return keys;
+}
+
 export type TokenizerHit = {
   /** The matched rule_key (machine-safe slug) */
   ruleKey: string;
