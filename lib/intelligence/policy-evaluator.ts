@@ -1,5 +1,22 @@
+/**
+ * Policy Evaluator — deterministic rule-matching engine.
+ *
+ * This is the CORE EVALUATOR CONTRACT (CONTRACTS.md §2). It is pure,
+ * synchronous, and deterministic — no I/O, no LLM, no RAG (ADR 0003).
+ *
+ * Two modes from the same code:
+ *   - `backtest`: historical gap analysis against past shipments
+ *   - `pre_shipment`: future gateway precheck (POST /v1/precheck)
+ *
+ * Default-allow: if no rule matches, return ALLOW.
+ * Unknown ≠ compliant: null inputs evaluate to unknown, not pass/fail.
+ *
+ * FROZEN (contracts-v1). Additive changes only via Change Request → Controller → E1.
+ */
+
 import { GATEWAY_ACTIONS, type GatewayAction } from './taxonomy';
 
+/** Valid policy document types (01-ingestion.md). */
 export const POLICY_TYPES = [
   'carrier_contract',
   'carrier_tariff',
@@ -13,9 +30,11 @@ export const POLICY_TYPES = [
 
 export type PolicyType = typeof POLICY_TYPES[number];
 
+/** Policy lifecycle states. */
 export const POLICY_STATUSES = ['draft', 'active', 'archived'] as const;
 export type PolicyStatus = typeof POLICY_STATUSES[number];
 
+/** Document extraction pipeline states. */
 export const POLICY_DOCUMENT_STATUSES = [
   'not_started',
   'extracted',
@@ -25,27 +44,53 @@ export const POLICY_DOCUMENT_STATUSES = [
 
 export type PolicyDocumentStatus = typeof POLICY_DOCUMENT_STATUSES[number];
 
+/**
+ * Declarative IF logic for a single policy rule.
+ * Every specified key must match (AND semantics). Null context fields
+ * fail individual checks — an unknown value is not a pass.
+ *
+ * FROZEN (contracts-v1). New keys require a Change Request to E1.
+ */
 export type PolicyCondition = {
+  /** Declared value >= threshold (cents or dollars — unit-consistent) */
   declaredValueGte?: number;
+  /** Declared value > threshold */
   declaredValueGt?: number;
+  /** Declared value <= threshold */
   declaredValueLte?: number;
+  /** Insured value is less than declared value (under-insured) */
   insuredValueLtDeclared?: boolean;
+  /** Carrier SCAC or name is in this list */
   carrierIn?: string[];
+  /** Carrier SCAC or name is NOT in this list */
   carrierNotIn?: string[];
+  /** Service level code is in this list */
   serviceIn?: string[];
+  /** Service level code is NOT in this list */
   serviceNotIn?: string[];
+  /** Shipper vertical matches (string or array for multi-match) */
   shipperVertical?: string | string[];
+  /** Exact commodity type match */
   commodityType?: string;
+  /** Commodity type is in this list */
   commodityIn?: string[];
+  /** Destination country code is in this list */
   destinationCountryIn?: string[];
+  /** Destination zip prefix is in this list */
   destinationZipIn?: string[];
+  /** Destination risk tier is in this list */
   destinationRiskTierIn?: string[];
+  /** Signature required when declared value >= this threshold */
   signatureRequiredAbove?: number;
+  /** Required signature type is in this list */
   signatureTypeIn?: string[];
+  /** At least one of these documents is missing */
   documentationRequired?: string[];
+  /** Package type is in this list */
   packageTypeIn?: string[];
 };
 
+/** THEN action for a matched rule. Decision is validated against GATEWAY_ACTIONS. */
 export type PolicyAction = {
   decision: GatewayAction;
   message: string;
@@ -54,6 +99,11 @@ export type PolicyAction = {
   uninsuredExposure?: number;
 };
 
+/**
+ * The shipment-like payload for evaluation.
+ * Built from the shipment spine (ADR 0001): "Shipments" ← "Invoices" ← "Audit Results"
+ * plus insurance audit results. One context per shipment.
+ */
 export type ShipmentPolicyContext = {
   clientId: string;
   shipmentId?: string | null;
@@ -72,10 +122,13 @@ export type ShipmentPolicyContext = {
   signatureType?: string | null;
   packageType?: string | null;
   documentationReceived?: string[] | null;
+  /** Aggregated preventable financial loss from linked audit findings */
   preventableLoss?: number | null;
+  /** Aggregated uninsured exposure from linked insurance findings */
   uninsuredExposure?: number | null;
 };
 
+/** A policy rule ready for evaluation (DB row joined + parsed). */
 export type PolicyRuleForEvaluation = {
   id: string;
   clientId: string;
@@ -89,6 +142,7 @@ export type PolicyRuleForEvaluation = {
   clauseRef: string | null;
 };
 
+/** One decision produced by evaluatePolicyContext. */
 export type PolicyDecision = {
   decision: GatewayAction;
   ruleId: string | null;

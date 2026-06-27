@@ -36,6 +36,8 @@ const prId   = sql`'pr'  || replace(gen_random_uuid()::text, '-', '')`;
 const pbtId  = sql`'pbt' || replace(gen_random_uuid()::text, '-', '')`;
 const pbrId  = sql`'pbr' || replace(gen_random_uuid()::text, '-', '')`;
 const graId  = sql`'gra' || replace(gen_random_uuid()::text, '-', '')`;
+const gdId   = sql`'gd'  || replace(gen_random_uuid()::text, '-', '')`;
+const ptcId  = sql`'ptc' || replace(gen_random_uuid()::text, '-', '')`;
 
 // ── Business tables (quoted names from Airtable legacy) ──────────
 
@@ -543,17 +545,20 @@ export const policyDocuments = pgTable('policy_documents', {
 ]);
 
 export const policyRulesets = pgTable('policy_rulesets', {
-  id:            text('id').primaryKey().default(prsId),
-  clientId:      text('client_id').notNull(),
-  version:       text('version').notNull(),
-  status:        text('status').notNull().default('draft'),
-  effectiveFrom: date('effective_from'),
-  effectiveTo:   date('effective_to'),
-  createdBy:     text('created_by'),
-  reviewedBy:    text('reviewed_by'),
-  activatedAt:   timestamp('activated_at', { withTimezone: true }),
-  archivedAt:    timestamp('archived_at', { withTimezone: true }),
-  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id:             text('id').primaryKey().default(prsId),
+  clientId:       text('client_id').notNull(),
+  version:        text('version').notNull(),
+  status:         text('status').notNull().default('draft'),
+  effectiveFrom:  date('effective_from'),
+  effectiveTo:    date('effective_to'),
+  createdBy:      text('created_by'),
+  reviewedBy:     text('reviewed_by'),
+  activatedAt:    timestamp('activated_at', { withTimezone: true }),
+  archivedAt:     timestamp('archived_at', { withTimezone: true }),
+  attestedBy:     text('attested_by'),
+  attestedAt:     timestamp('attested_at', { withTimezone: true }),
+  scopeStatement: text('scope_statement'),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('uq_policy_ruleset_client_version').on(t.clientId, t.version),
   index('idx_policy_rulesets_client').on(t.clientId, t.status),
@@ -620,6 +625,47 @@ export const policyBacktestResults = pgTable('policy_backtest_results', {
   index('idx_policy_backtest_results_client').on(t.clientId, t.category),
   index('idx_policy_backtest_results_rule').on(t.ruleId),
 ]);
+
+// ── Keystone Phase 0 tables (contracts-v1) ─────────────────────────
+
+/** Tier-2: Forensic gateway decision log (08-gateway.md D6). RLS-protected. */
+export const gatewayDecisions = pgTable('gateway_decisions', {
+  id:                text('id').primaryKey().default(gdId),
+  clientId:          text('client_id').notNull(),
+  correlationId:     text('correlation_id').notNull(),
+  requestJson:       jsonb('request_json'),
+  decision:          text('decision').notNull(),
+  enforced:          boolean('enforced').notNull().default(false),
+  violations:        jsonb('violations'),
+  rulesetVersion:    text('ruleset_version'),
+  degraded:          boolean('degraded').notNull().default(false),
+  rulesetSnapshotId: text('ruleset_snapshot_id'),
+  createdAt:         timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('idx_gateway_decisions_client').on(t.clientId, t.createdAt.desc()),
+  index('idx_gateway_decisions_correlation').on(t.correlationId),
+]);
+
+/** Tier-0: Taxonomy discovery candidates (07-schema-evolution.md). No client_id — structural metadata. */
+export const policyTaxonomyCandidates = pgTable('policy_taxonomy_candidates', {
+  id:                 text('id').primaryKey().default(ptcId),
+  ruleKey:            text('rule_key').notNull(),
+  inferredDatatype:   text('inferred_datatype'),
+  inferredBounds:     jsonb('inferred_bounds'),
+  lineage:            jsonb('lineage'),
+  surfacingClientId:  text('surfacing_client_id'),
+  seenCount:          integer('seen_count').notNull().default(1),
+  lifecycleStatus:    text('lifecycle_status').notNull().default('candidate'),
+  notes:              text('notes'),
+  createdAt:          timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  reviewedBy:         text('reviewed_by'),
+  reviewedAt:         timestamp('reviewed_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_taxonomy_candidates_status').on(t.lifecycleStatus, t.seenCount.desc()),
+]);
+
+// ── Gateway readiness ──────────────────────────────────────────────
 
 export const gatewayReadinessAssessments = pgTable('gateway_readiness_assessments', {
   id:                      text('id').primaryKey().default(graId),

@@ -2,11 +2,12 @@
 
 ## Connection Pattern
 
-- `@neondatabase/serverless` with `neon(DATABASE_URL)` is centralized in `lib/db.ts`.
-- Raw parameterized SQL is used throughout the app. Drizzle ORM defines schema and can be used incrementally for query building.
-- Custom type parsers: numeric (OID 1700) -> float, bigint (OID 20) -> int.
-- Schema: `db/schema.ts` is authoritative.
-- Migrations: `db/migrations/` contains SQL migrations. Add migrations for every schema change and keep Drizzle schema in sync.
+Two connection paths, documented in `lib/db.ts`:
+
+- **`getSql()`** — HTTP driver (`neon()`), connects as `neondb_owner`. For staff/console/aggregate BI work that legitimately reads across tenants. RLS does NOT apply to the table owner.
+- **`getTenantSql(clientId)`** — Pooled wire connection (`Pool`), connects as the restricted `app_tenant` role. Sets `app.current_tenant` per checkout so RLS policies are active. For Tier-2 protected reads.
+
+Full isolation design: [`data-protection.md`](data-protection.md). Frozen contract: [`CONTRACTS.md`](CONTRACTS.md) §5.
 
 ## Naming Rules
 
@@ -22,7 +23,7 @@
 | `"Invoices"` | `id`, `"Invoice number"`, `"Amount billed"`, `"Status"`, `"Invoice date"`, `"Carrier"`, `"Shipment"` text[], `"Clients"` text[], `created_at` | Carrier billed side |
 | `"Invoice Lines"` | `id` | Referenced in types, not heavily used yet |
 | `"Shipments"` | `id`, `"PRO number"`, `"Tracking number"`, `"Actual L/W/H"`, `"Actual weight lbs"`, `"Ship date"`, `"Delivery date"`, `"Service level"`, `"Carrier"`, `"Destination zip"`, `"Address classification"` | Client expected side |
-| `"Audit Results"` | `id`, `"Invoice"` text[], `"Outcome"`, `"Billed amount"`, `"Expected amount"`, `"Variance"`, `"Notes"`, `"Audited at"`, `"Detected by"`, `"Disputes"` text[], `"Review status"`, `"Client"`, `"Carrier SCAC"`, `"Invoice number"` | Findings queue source of truth |
+| `"Audit Results"` | `id`, `"Invoice"` text[], `"Outcome"`, `"Billed amount"`, `"Expected amount"`, `"Variance"`, `"Notes"`, `"Audited at"`, `"Detected by"`, `"Disputes"` text[], `"Review status"`, `"Client"` text[], `"Carrier SCAC"`, `"Invoice number"` | Findings queue source of truth. `"Client"` is a **text[]** (verified against DB 2026-06-26), not scalar — tenancy policies must use array membership. |
 | `"Disputes"` | `id`, `"Dispute ID"`, `"Invoice"` text[], `"Audit result"` text[], `"Status"`, `"Disputed amount"`, `"Recovery amount"`, dates, `"Resolution notes"`, `"Carrier (display)"`, `"Tracking number"`, `"Client"` text[] | Recovery workflow |
 | `"Clients"` | `id`, `"Company name"`, `"Contract active"`, `"Gain share pct"`, `"Min invoice threshold"`, `"Last audit run"` | Client master |
 | `"Carriers"` | `id`, `"Carrier name"`, `"SCAC"`, `"Contact email"`, SFTP config columns | Carrier master and SFTP config |
@@ -43,6 +44,8 @@
 | `tpl_fulfillment_lines` | 3PL fulfillment line staging and audit state |
 | `tpl_storage_lines` | 3PL storage line staging and audit state |
 | `sftp_processed_files` | SFTP de-duplication by carrier/file |
+| `gateway_decisions` | **New (contracts-v1).** Tier-2 forensic decision log for Gateway precheck. RLS-protected. |
+| `policy_taxonomy_candidates` | **New (contracts-v1).** Tier-0 taxonomy discovery candidates. No RLS — structural metadata only. |
 
 > **Policy Intelligence tables** (`client_policies`, `policy_documents`,
 > `policy_rulesets`, `policy_rules`, `policy_backtest_runs`, `policy_backtest_results`,
@@ -52,6 +55,13 @@
 > [`policy-intelligence/06-schema.md`](policy-intelligence/06-schema.md). They remain part
 > of this Postgres schema and follow the migration pattern below; they live in that module
 > to keep the Policy Intelligence concern single-sourced.
+
+## Tenant Isolation (planning)
+
+Tenant data protection (Pooled + Row-Level Security failsafe, restricted-role pooled
+connection) is being designed in [`data-protection.md`](data-protection.md). It builds on
+this layer's `client_id`-per-row convention; load that doc before adding RLS, a second
+connection helper, or any cross-tenant aggregate query.
 
 ## Data Access Layer (`lib/airtable.ts`)
 

@@ -1,3 +1,13 @@
+/**
+ * Policy Intelligence Taxonomy — canonical enums for the gateway and insurance layers.
+ *
+ * SINGLE SOURCE OF TRUTH (03-taxonomy.md). If this file and the doc disagree,
+ * this file wins and the doc is the bug. Do not duplicate these lists elsewhere.
+ *
+ * FROZEN (contracts-v1). New enum values are additive changes via Change Request.
+ */
+
+/** Gateway preventability classification for audit findings (CLAUDE.md inv. 7). */
 export const GATEWAY_PREVENTABILITY = [
   'PREVENTABLE_BY_GATEWAY',
   'NON_PREVENTABLE_BY_GATEWAY',
@@ -6,6 +16,7 @@ export const GATEWAY_PREVENTABILITY = [
 
 export type GatewayPreventability = typeof GATEWAY_PREVENTABILITY[number];
 
+/** Behavioral categories for preventable-loss mapping (15 core categories). */
 export const GATEWAY_CATEGORIES = [
   'DIM_WEIGHT_PADDING',
   'BOX_SIZE_MISMATCH',
@@ -26,6 +37,7 @@ export const GATEWAY_CATEGORIES = [
 
 export type GatewayCategory = typeof GATEWAY_CATEGORIES[number];
 
+/** Source of a gateway tag: rule default, human-confirmed, or AI-proposed. */
 export const GATEWAY_SIGNAL_SOURCES = [
   'RULE_DEFAULT',
   'ANALYST_REVIEW',
@@ -34,6 +46,7 @@ export const GATEWAY_SIGNAL_SOURCES = [
 
 export type GatewaySignalSource = typeof GATEWAY_SIGNAL_SOURCES[number];
 
+/** Gateway enforcement actions: advisory (ALLOW, WARN) through enforcement (BLOCK, REQUIRE_*). */
 export const GATEWAY_ACTIONS = [
   'ALLOW',
   'WARN',
@@ -44,6 +57,7 @@ export const GATEWAY_ACTIONS = [
 
 export type GatewayAction = typeof GATEWAY_ACTIONS[number];
 
+/** High-value shipper verticals (jewelry-first, built vertical-agnostic per 03-taxonomy.md). */
 export const HIGH_VALUE_VERTICALS = [
   'jewelry',
   'fine_art',
@@ -62,6 +76,7 @@ export const HIGH_VALUE_VERTICALS = [
 
 export type HighValueVertical = typeof HIGH_VALUE_VERTICALS[number];
 
+/** Insurance risk categories for high-value shippers (21 categories, 03-taxonomy.md). */
 export const INSURANCE_RISK_CATEGORIES = [
   'DECLARED_VALUE_MISMATCH',
   'UNDER_INSURED_SHIPMENT',
