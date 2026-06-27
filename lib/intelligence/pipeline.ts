@@ -11,12 +11,14 @@
 import { tokenize, tokenizeAll } from './tokenizer';
 import { findSimilarClauses, generateEmbedding, storeClauseEmbedding, getHighMatchCandidates, type VectorMatchResult, type HighMatchCandidate } from './embeddings';
 import { classifyClause, type T2Result, type T2MappedResult } from './classifier';
+import { storeUnmappedClause } from './policy-service';
 import type { PolicyCondition, PolicyAction } from './policy-evaluator';
 import type { TokenizerHit } from './tokenizer';
+import { getSql } from '@/lib/db';
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type ClassificationSource = 'TOKENIZER' | 'VECTOR_MATCH' | 'LLM_MAPPER' | 'UNMAPPED';
+export type ClassificationSource = 'TOKENIZER' | 'VECTOR_MATCH' | 'LLM_MAPPER' | 'UNMAPPED' | 'CLIENT_EXCLUDED';
 
 export interface ClassificationResult {
   clauseText: string;
@@ -50,6 +52,10 @@ export interface PipelineOptions {
   concurrency?: number;
   /** Skip T2 LLM calls entirely (for cheap dry runs) */
   skipT2?: boolean;
+  /** Client ID for T4 unmapped clause storage (routes to client ambiguity dashboard) */
+  clientId?: string;
+  /** Policy ID for T4 unmapped clause context */
+  policyId?: string;
 }
 
 // ── Cost Tracking ───────────────────────────────────────────────────
@@ -62,6 +68,29 @@ function t2Cost(modelUsed: string): number {
   if (modelUsed === 'gpt-4o-mini') return COST_PER_T2_CALL;
   if (modelUsed.startsWith('claude')) return COST_PER_CLAUDE_CALL;
   return 0;
+}
+
+// ── T4 Exclusion Check ───────────────────────────────────────────────
+
+/**
+ * Check if a clause has been explicitly excluded by the client.
+ * If excluded, skip T1-T3 — the clause is a client decision, not unclassified.
+ */
+async function isClauseExcluded(clientId: string, clauseText: string): Promise<{ excluded: boolean; reason?: string }> {
+  try {
+    const sql = await getSql();
+    const rows = await sql.query(`
+      SELECT reason FROM policy_scope_exclusions
+      WHERE client_id = $1 AND clause_text = $2 AND status = 'excluded' AND deleted_at IS NULL
+      LIMIT 1
+    `, [clientId, clauseText]) as Record<string, unknown>[];
+    if (rows.length > 0) {
+      return { excluded: true, reason: String(rows[0].reason ?? 'Client excluded this clause.') };
+    }
+  } catch (err) {
+    console.warn('[Pipeline] Exclusion check failed (non-fatal):', err instanceof Error ? err.message : err);
+  }
+  return { excluded: false };
 }
 
 // ── p-limit (inline, no external dep) ───────────────────────────────
@@ -144,6 +173,22 @@ export async function classify(
       };
       stats.t4Unmapped++;
       continue;
+    }
+
+    // ── T4 Exclusion Check: skip already-excluded clauses ─────────
+    if (options.clientId) {
+      const { excluded, reason } = await isClauseExcluded(options.clientId, clauseText);
+      if (excluded) {
+        results[i] = {
+          clauseText,
+          tier: 'T4',
+          classificationSource: 'CLIENT_EXCLUDED',
+          confidence: 1,
+          mapped: false,
+          reason: reason || 'Client excluded this clause.',
+        };
+        continue;
+      }
     }
 
     // ── T1: Deterministic tokenizer ──────────────────────────────────
@@ -267,6 +312,20 @@ export async function classify(
 
   // Wait for all T2 calls to complete
   await Promise.all(t2Queue);
+
+  // ── T4: Persist unmapped clauses for client ambiguity dashboard ─────
+  if (options.clientId) {
+    const unmappedClauses = results.filter(r => !r.mapped && r.clauseText);
+    for (const uc of unmappedClauses) {
+      storeUnmappedClause({
+        clientId: options.clientId,
+        policyId: options.policyId,
+        clauseText: uc.clauseText,
+      }).catch(err => {
+        console.warn('[Pipeline] T4 storeUnmappedClause failed (non-fatal):', err instanceof Error ? err.message : err);
+      });
+    }
+  }
 
   // Separate classified from unmapped
   const classified = results.filter(r => r.mapped);

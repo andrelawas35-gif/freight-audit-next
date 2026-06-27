@@ -47,11 +47,12 @@ export const CODE_MAPPING_STATUSES = [
 
 export type CodeMappingStatus = typeof CODE_MAPPING_STATUSES[number];
 
-/** Source of a gateway tag: rule default, human-confirmed, or AI-proposed. */
+/** Source of a gateway tag: rule default, human-confirmed, AI-proposed, or client-defined. */
 export const GATEWAY_SIGNAL_SOURCES = [
   'RULE_DEFAULT',
   'ANALYST_REVIEW',
   'AI_SUGGESTED',
+  'CLIENT_DEFINED',
 ] as const;
 
 export type GatewaySignalSource = typeof GATEWAY_SIGNAL_SOURCES[number];

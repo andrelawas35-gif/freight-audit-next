@@ -42,6 +42,7 @@ const ceId   = sql`'ce_' || replace(gen_random_uuid()::text, '-', '')`;
 const atId   = sql`'at'  || replace(gen_random_uuid()::text, '-', '')`;
 const ibId   = sql`'ib'  || replace(gen_random_uuid()::text, '-', '')`;
 const irId   = sql`'ir'  || replace(gen_random_uuid()::text, '-', '')`;
+const pseId  = sql`'pse' || replace(gen_random_uuid()::text, '-', '')`;
 
 // ── Business tables (quoted names from Airtable legacy) ──────────
 
@@ -771,6 +772,32 @@ export const policyTaxonomyCandidates = pgTable('policy_taxonomy_candidates', {
   reviewedAt:         timestamp('reviewed_at', { withTimezone: true }),
 }, (t) => [
   index('idx_taxonomy_candidates_status').on(t.lifecycleStatus, t.seenCount.desc()),
+]);
+
+/** T4 Client Ambiguity Dashboard — client decisions on unmappable clauses (ADR 0012 D5). */
+export const policyScopeExclusions = pgTable('policy_scope_exclusions', {
+  id:             text('id').primaryKey().default(pseId),
+  clientId:       text('client_id').notNull(),
+  policyId:       text('policy_id'),
+  rulesetId:      text('ruleset_id'),
+  clauseRef:      text('clause_ref'),
+  clauseText:     text('clause_text').notNull(),
+  exclusionType:  text('exclusion_type').notNull().default('exclude'),
+  reason:         text('reason'),
+  ruleKey:        text('rule_key'),
+  conditionJson:  jsonb('condition_json'),
+  status:         text('status').notNull().default('pending_review'),
+  excludedBy:     text('excluded_by'),
+  excludedAt:     timestamp('excluded_at', { withTimezone: true }).notNull().defaultNow(),
+  reviewedBy:     text('reviewed_by'),
+  reviewedAt:     timestamp('reviewed_at', { withTimezone: true }),
+  createdAt:      timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt:      timestamp('deleted_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_scope_exclusions_client').on(t.clientId, t.status),
+  index('idx_scope_exclusions_policy').on(t.policyId, t.exclusionType),
+  index('idx_scope_exclusions_clause').on(t.clientId, t.clauseText),
 ]);
 
 // ── Gateway readiness ──────────────────────────────────────────────

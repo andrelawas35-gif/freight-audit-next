@@ -13,6 +13,7 @@ const NAV_OVERVIEW = [
 const NAV_TOOLS = [
   { href: '/portal/upload', label: 'Upload data', icon: 'upload' },
   { href: '/portal/reports', label: 'Reports', icon: 'bar-chart' },
+  { href: '/portal/policy-review', label: 'Policy Review', icon: 'file-text' },
 ] as const;
 
 const NAV_BOTTOM = [

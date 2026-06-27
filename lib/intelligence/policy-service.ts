@@ -1210,3 +1210,109 @@ function toBacktestInsert(
     uninsuredExposure: decision.uninsuredExposure,
   };
 }
+
+// ── T4 Client Ambiguity Dashboard (ADR 0012 D5) ────────────────────
+
+export type UnmappedClauseRow = {
+  id: string;
+  clientId: string;
+  policyId: string | null;
+  policyName: string | null;
+  documentId: string | null;
+  documentName: string | null;
+  clauseRef: string | null;
+  clauseText: string;
+  exclusionType: string;
+  status: string;
+  reason: string | null;
+  createdAt: string;
+};
+
+/**
+ * Fetch all unmapped/ambiguous clauses for a client that need T4 decisions.
+ * Returns scope exclusion rows with status 'pending_review' plus any
+ * clause_embeddings marked as 'unmapped' that don't yet have exclusion rows.
+ */
+export async function getUnmappedClausesForClient(clientId: string): Promise<UnmappedClauseRow[]> {
+  const sql = await getSql();
+
+  const rows = await sql.query(`
+    SELECT
+      pse.id,
+      pse.client_id AS "clientId",
+      pse.policy_id AS "policyId",
+      cp.name AS "policyName",
+      pse.clause_ref AS "clauseRef",
+      pse.clause_text AS "clauseText",
+      pse.exclusion_type AS "exclusionType",
+      pse.status,
+      pse.reason,
+      pse.created_at AS "createdAt"
+    FROM policy_scope_exclusions pse
+    LEFT JOIN client_policies cp ON cp.id = pse.policy_id
+    WHERE pse.client_id = $1
+      AND pse.status IN ('pending_review', 'staff_review')
+      AND pse.deleted_at IS NULL
+    ORDER BY pse.created_at DESC
+  `, [clientId]) as Record<string, unknown>[];
+
+  return rows.map(r => ({
+    id: String(r.id ?? ''),
+    clientId: String(r.clientId ?? ''),
+    policyId: r.policyId ? String(r.policyId) : null,
+    policyName: r.policyName ? String(r.policyName) : null,
+    documentId: null,
+    documentName: null,
+    clauseRef: r.clauseRef ? String(r.clauseRef) : null,
+    clauseText: String(r.clauseText ?? ''),
+    exclusionType: String(r.exclusionType ?? 'pending_review'),
+    status: String(r.status ?? 'pending_review'),
+    reason: r.reason ? String(r.reason) : null,
+    createdAt: String(r.createdAt ?? ''),
+  }));
+}
+
+/**
+ * Store an unmapped clause from the pipeline as a pending T4 review item.
+ * Idempotent — if the same (clientId, clauseText) exists as pending_review,
+ * bumps updated_at instead of creating a duplicate.
+ */
+export async function storeUnmappedClause(params: {
+  clientId: string;
+  policyId?: string;
+  clauseRef?: string;
+  clauseText: string;
+}): Promise<string | null> {
+  const sql = await getSql();
+
+  // Check for existing pending record
+  const existing = await sql.query(`
+    SELECT id FROM policy_scope_exclusions
+    WHERE client_id = $1 AND clause_text = $2 AND status = 'pending_review' AND deleted_at IS NULL
+    LIMIT 1
+  `, [params.clientId, params.clauseText]) as Record<string, unknown>[];
+
+  if (existing.length > 0) {
+    // Bump updated_at on existing
+    await sql.query(`
+      UPDATE policy_scope_exclusions
+      SET updated_at = NOW()
+      WHERE id = $1
+    `, [existing[0].id]);
+    return existing[0].id as string;
+  }
+
+  // Insert new
+  const result = await sql.query(`
+    INSERT INTO policy_scope_exclusions (
+      id, client_id, policy_id, clause_ref, clause_text,
+      exclusion_type, status
+    ) VALUES (
+      'pse' || replace(gen_random_uuid()::text, '-', ''),
+      $1, $2, $3, $4, 'flag', 'pending_review'
+    )
+    RETURNING id
+  `, [params.clientId, params.policyId || null, params.clauseRef || null, params.clauseText]) as Record<string, unknown>[];
+
+  return result[0]?.id as string ?? null;
+}
