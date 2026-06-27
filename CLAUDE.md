@@ -46,7 +46,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 - **Install**: `npm install --legacy-peer-deps` (next-auth beta peer conflicts; codified in `.npmrc`).
 - **Auth config**: `trustHost: true` required for non-Vercel deployments.
 - **DB access**: all modules import `getSql()` from `lib/db.ts` - single connection singleton.
-- **Schema**: `db/schema.ts` (Drizzle) is authoritative. Raw SQL queries via `lib/db.ts` work alongside.
+- **Schema**: `db/migrations/*.sql` are the authoritative schema definition. `db/schema.ts` is a generated typed read-model (introspected from live DB via `drizzle-kit introspect`). Raw SQL queries via `lib/db.ts` work alongside. Do NOT hand-edit `db/schema.ts`.
 - **Job queue**: Postgres-backed (`audit_jobs` table), `FOR UPDATE SKIP LOCKED` claim pattern. No external deps.
 - **Tests**: `npm test` (Vitest). Coverage exists for pagination/chunk boundaries.
 
