@@ -89,6 +89,8 @@ export async function runThreePLAudit(opts: {
             'Carrier SCAC': finding.scac ?? undefined,
             'Client': finding.clientId ? [finding.clientId] : undefined,
             'Invoice number': finding.orderId ?? undefined,
+            'subject_type': 'tpl',
+            'subject_id': finding.lineId,
             ...gatewayTagToFields(gateway),
           };
         }), { inTransaction: true });

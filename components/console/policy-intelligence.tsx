@@ -1071,7 +1071,7 @@ function GoldenExampleCell({ doc }: { doc: PolicyDocumentRow }) {
 
   if (isGolden) {
     return (
-      <form action={demoteGoldenExampleAction}>
+      <form action={formData => { void demoteGoldenExampleAction(null as any, formData); }}>
         <input type="hidden" name="documentId" value={doc.id} />
         <input type="hidden" name="policyId" value={doc.policy_id} />
         <button type="submit" style={{ ...promoteBtnStyle, background: 'oklch(0.92 0.08 145)', color: 'oklch(0.4 0.06 145)', border: '1px solid oklch(0.8 0.08 145)' }}>
@@ -1086,7 +1086,7 @@ function GoldenExampleCell({ doc }: { doc: PolicyDocumentRow }) {
   }
 
   return (
-    <form action={promoteToGoldenExampleAction}>
+    <form action={formData => { void promoteToGoldenExampleAction(null as any, formData); }}>
       <input type="hidden" name="documentId" value={doc.id} />
       <input type="hidden" name="policyId" value={doc.policy_id} />
       <button type="submit" style={promoteBtnStyle}>

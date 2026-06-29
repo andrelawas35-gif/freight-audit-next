@@ -112,6 +112,8 @@ export const auditResults = pgTable("Audit Results", {
 	recoverAmount: numeric("Recover amount"),
 	ruleName: text("Rule name"),
 	rule: text("Rule"),
+	subjectType: text("subject_type"),
+	subjectId: text("subject_id"),
 }, (table) => [
 	index("idx_audit_outcome").using("btree", table.outcome.asc().nullsLast().op("text_ops")),
 ]);

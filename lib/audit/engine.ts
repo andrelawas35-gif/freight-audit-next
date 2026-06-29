@@ -133,6 +133,8 @@ export async function runAudit(options: {
           'Notes': f.notes,
           'Audited at': auditedAt,
           'Detected by': f.ruleCode,
+          'subject_type': 'parcel',
+          'subject_id': f.invoiceId,
           ...gatewayTagToFields(gateway),
         };
       });
