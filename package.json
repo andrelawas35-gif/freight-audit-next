@@ -8,7 +8,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:correctness": "vitest run --config vitest.config.ts",
-    "test:heavy": "vitest run --config vitest.config.ts",
+    "test:heavy": "vitest run --config vitest.config.ts --dir lib/__tests__/heavy",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "npx tsx db/migrate.ts",
     "db:provision": "npx tsx db/migrate.ts",

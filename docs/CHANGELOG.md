@@ -2,6 +2,45 @@
 
 Completed or historical changes belong here. Keep `docs/LAUNCH-BLOCKERS.md` and `docs/BACKLOG.md` focused on open work only.
 
+## 2026-06-29
+
+### Heavy System Testing — Wave 0 & Wave 1 (Build Plan v3)
+
+Heavy-testing build plan execution began. Two waves delivered: the finding-identity keystone schema, the harness infrastructure with ephemeral branch provisioning and two-speed CI, and two behavior-preserving refactors (taxonomy map + connection pooling). See [`HEAVY-TESTING-BUILD-PLAN.md`](HEAVY-TESTING-BUILD-PLAN.md) for the full 5-wave sequence.
+
+#### Wave 0 — H1: Finding-Identity Keystone Schema
+
+- **Migration 0026**: Added `subject_type` and `subject_id` columns to `"Audit Results"` with best-effort backfill. No `UNIQUE` constraint yet — duplicates remain possible so Wave 2's suite 2 can reproduce them. The finding natural key is `(subject_type, subject_id, "Detected by")`.
+- **Parcel engine** (`lib/audit/engine.ts`): Populates `subject_type='parcel'`, `subject_id=f.invoiceId` in the record map.
+- **3PL engine** (`lib/audit/3pl-engine.ts`): Populates `subject_type='tpl'`, `subject_id=finding.lineId` (the **line id**, not `order_id` — preserves `TPL_DUPLICATE` multi-cycle findings as distinct recoverable claims).
+- **Schema**: `db/schema.ts` updated with `subjectType`/`subjectId` read-model columns.
+- **Commit**: `3ec8a73`
+
+#### Wave 1 — H5a: Taxonomy switch→map Refactor
+
+- Refactored `defaultGatewayTagForRule`'s `switch` statement into an explicit `Record<string, TaxonomyEntry>` map (`GATEWAY_TAG_MAP`). A missing rule code now throws `Error` (structural error) instead of silent `UNKNOWN` fallthrough. All 12 existing mappings preserved exactly (including deliberate `DUPLICATE_TRACKING` → `UNKNOWN`).
+- **Files**: `lib/intelligence/taxonomy.ts`
+
+#### Wave 1 — H6a: Connection-Pooling Refactor
+
+- Batched the 4-round-trip tenant checkout (`RESET ROLE`/`RESET tenant`/`SET ROLE`/`SET tenant`) into a single multi-statement query.
+- Added explicit `Pool max` (default 10) and `TENANT_DATABASE_URL` env var for pooled-endpoint override (defaults to `DATABASE_URL` for zero behavior change).
+- **Files**: `lib/db.ts`
+
+#### Wave 1 — H2: Harness Infrastructure & Two-Speed CI
+
+- **Ephemeral branch lifecycle** (`lib/__tests__/harness/branch.ts`): Creates copy-on-write Neon branches via API, provisions with `db/migrate.ts`, destroys in `finally`. Fallback to pre-provisioned `TEST_DATABASE_URL` branch with TRUNCATE.
+- **Schema snapshot guard** (`lib/__tests__/harness/schema-snapshot.ts`): Introspects `information_schema`, asserts against drift with readable diff.
+- **Test DB helpers** (`lib/__tests__/harness/db.ts`): `getTestPool()` gated on `TEST_DATABASE_URL`, `truncateTables()` with FK-aware CASCADE.
+- **Two-speed CI** (`.github/workflows/ci.yml`): `correctness-gate` job (per-PR, hard-blocking, runs `test:correctness`) + `heavy-suite` job (nightly/on-demand, non-blocking measured, runs `test:heavy`).
+- **Scripts** (`package.json`): Added `test:correctness` and `test:heavy`.
+- **Commit**: `e41bba9` (H5a+H6a), `8bccce7` (H2)
+
+### Build Fix — policy-intelligence.tsx Form Action Type Error
+
+- Fixed `useActionState`-style server actions (`_prev, formData`) not matching `<form action>` signature (`formData => void`). Wrapped `demoteGoldenExampleAction` and `promoteToGoldenExampleAction` with `void` operator.
+- **Files**: `components/console/policy-intelligence.tsx`
+
 ## 2026-06-26
 
 ### Phase 3 — T4 Client Ambiguity Dashboard + DeepSeek-V3 (ADR 0012 D5)

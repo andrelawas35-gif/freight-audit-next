@@ -284,3 +284,12 @@ export function gatewayTagToFields(tag: GatewayTag): Record<string, unknown> {
     'Gateway signal source': validated.gatewaySignalSource,
   };
 }
+
+/**
+ * Return every active rule code that has an explicit taxonomy mapping.
+ * Used by the suite-1 rule-code registry guard to assert no revenue-bearing
+ * rule ships without a mapping entry in GATEWAY_TAG_MAP.
+ */
+export function getActiveRuleCodes(): string[] {
+  return Object.keys(GATEWAY_TAG_MAP);
+}

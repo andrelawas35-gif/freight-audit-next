@@ -139,11 +139,27 @@ function getApiKey(provider: LLMProvider): string {
 
 // ── Timeout Wrapper ──────────────────────────────────────────────────
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // If the caller's signal fires, propagate to our controller
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      clearTimeout(timeoutId);
+      return Promise.reject(new Error(`[llmCall] Request aborted before start`));
+    }
+    signal.addEventListener('abort', () => {
+      controller.abort(signal.reason);
+    }, { once: true });
+  }
 
   return Promise.race([
     promise,
@@ -209,13 +225,18 @@ export async function llmCall(opts: LLMCallOptions): Promise<LLMResponse> {
   const config = PROVIDER_CONFIGS[opts.provider];
 
   return withRetry(async () => {
+    // Create a fresh AbortController per attempt so retries get a new signal.
+    const abortController = new AbortController();
+
     const response = await withTimeout(
       fetch(config.url, {
         method: 'POST',
         headers: config.headers(apiKey),
         body: JSON.stringify(config.buildBody(opts)),
+        signal: abortController.signal,  // wire the abort signal so timeout actually kills the socket
       }),
       timeoutMs,
+      abortController.signal,
     );
 
     if (!response.ok) {
