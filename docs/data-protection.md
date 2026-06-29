@@ -257,7 +257,8 @@ try {
 
 Key points:
 - Acquire one `getTenantSql(clientId)` per request, not per query.
-- Pass the `db` handle as the third argument to `records.ts` read helpers.
+- Pass the `db` handle as the third argument to `records.ts` read helpers, or as the second
+  argument to `lib/intelligence/reports.ts` report functions.
 - Always release in `finally` to avoid pool exhaustion.
 - Staff console / audit engine paths continue using `getSql()` (owner connection, RLS bypassed).
 
@@ -292,3 +293,31 @@ When adding `deleted_at` to a new table, update `SOFT_DELETE_TABLES` in the same
 - `docs/auth.md` — where `session.user.clientId` originates.
 - `docs/policy-intelligence/06-schema.md` — the most `client_id`-dense tables; primary RLS
   candidates.
+
+### D6 — RLS enforcement boundary: portal client path only — LOCKED (2026-06-27)
+
+RLS is enforced on the **portal client path** via `getTenantSql()`. Staff console, audit
+engine, ingestion, and dispute operations connect via `getSql()` (table owner, `BYPASSRLS`)
+— by design, not by omission.
+
+**Why:**
+- Staff are trusted and cross-tenant by role; the owner connection lets them query across
+  clients for console operations, aggregate BI, and audit runs.
+- The portal path is the only surface a client (or a client-scoped session) touches; it is
+  the surface where a forgotten `WHERE client_id = ?` could actually leak rows to another
+  tenant's browser.
+- Adding RLS to staff paths would break legitimate cross-tenant queries (bulk dispute ops,
+  global rulebook, aggregate dashboards) without a corresponding security gain.
+
+**What this means for contributors:**
+1. **Portal reads (client-facing)** → use `getTenantSql(clientId)`. RLS is active.
+2. **Staff console reads** → use `getSql()`. Owner connection, RLS bypassed. Still scope
+   with app-level `WHERE client_id` where appropriate — the absence of engine enforcement
+   does not mean the absence of app-level discipline.
+3. **Adding a new portal read path** → acquire one `getTenantSql(clientId)` per request,
+   pass the db handle through, release in `finally`. If the new path reads from a table
+   not yet in the RLS-protected set, extend the grants + policies (migration 0018 pattern)
+   before wiring.
+4. **Adding FORCE RLS to a table** → verify all consumers of that table use the appropriate
+   connection path. FORCE RLS + owner connection = silent no-op (safe). FORCE RLS +
+   `app_tenant` without proper grants = zero rows (outage).

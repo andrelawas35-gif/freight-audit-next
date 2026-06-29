@@ -69,6 +69,9 @@ export async function runThreePLAudit(opts: {
     // Findings + mark-audited must be atomic — a crash between them would
     // leave lines marked pending with findings already written (double-audit)
     // or findings missing with lines marked audited (lost findings).
+    // Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
+    // Verified working on pinned @neondatabase/serverless version.
+    // TODO: migrate to sql.transaction() when batchCreate is refactored.
     await sql.query('BEGIN');
     try {
       if (findings.length) {

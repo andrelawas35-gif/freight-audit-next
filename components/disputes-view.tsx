@@ -118,7 +118,7 @@ export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { 
 
   // ── write actions ───────────────────────────────────────────
   const handleAdvance = (d: DisputeRow) => {
-    const idx = STAGES.indexOf(d.stage);
+    const idx = STAGES.indexOf(d.stage as typeof STAGES[number]);
     if (idx === -1 || idx >= STAGES.length - 1) return;
     const next = STAGES[idx + 1];
     const today = new Date().toISOString().slice(0, 10);
@@ -126,10 +126,10 @@ export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { 
     setRows(prev => prev.map(r => {
       if (r.id !== d.id) return r;
       const updated: DisputeRow = { ...r, stage: next };
-      if (next === 'Submitted') updated.filed = today;
-      if (next === 'Won' || next === 'Closed') {
+      if (next === 'filed') updated.filed = today;
+      if (next === 'won' || next === 'closed') {
         updated.resolved = today;
-        if (next === 'Won' && !updated.recovery) updated.recovery = updated.amount;
+        if (next === 'won' && !updated.recovery) updated.recovery = updated.amount;
       }
       updated.events = [...r.events, eventForStage(next, today)];
       return updated;
@@ -264,7 +264,7 @@ export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { 
                     ? <StagePill stage={g.key} full />
                     : <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{g.label}</span>}
                   <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
-                    {g.items.length} · {fmtUSD(g.items.reduce((a, b) => a + (b.stage === 'Won' ? (b.recovery || 0) : b.amount), 0))}
+                    {g.items.length} · {fmtUSD(g.items.reduce((a, b) => a + (b.stage === 'won' ? (b.recovery || 0) : b.amount), 0))}
                   </span>
                 </div>
               )}
@@ -301,7 +301,7 @@ export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { 
 
 // ── Single row ────────────────────────────────────────────────
 function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean; onClick: () => void }) {
-  const isWon = d.stage === 'Won';
+  const isWon = d.stage === 'won';
   return (
     <div data-rid={d.id} onClick={onClick} style={{
       display: 'grid', gridTemplateColumns: '46px 1fr 64px 110px 60px 70px 80px', gap: 8, alignItems: 'center',
@@ -319,7 +319,7 @@ function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean
       <CarrierMark scac={d.carrier} withName />
       <StagePill stage={d.stage} />
       <span className="mono tnum" style={{ fontSize: 10.5, color: d.silentDays >= 7 ? 'var(--amber-ink)' : 'var(--ink-3)', fontWeight: d.silentDays >= 7 ? 700 : 400 }}>
-        {d.silentDays > 0 && !['Won', 'Closed'].includes(d.stage) ? d.silentDays + 'd' : '—'}
+        {d.silentDays > 0 && !['won', 'closed'].includes(d.stage) ? d.silentDays + 'd' : '—'}
       </span>
       <span className="mono tnum" style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: isWon ? 'var(--green-ink)' : 'var(--ink)' }}>
         {fmtUSD(isWon ? (d.recovery || 0) : d.amount, true)}
@@ -352,9 +352,9 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
     </div>
   );
 
-  const isWon = d.stage === 'Won';
-  const isClosed = d.stage === 'Closed';
-  const isSilent = d.silentDays >= 7 && !['Won', 'Closed'].includes(d.stage);
+  const isWon = d.stage === 'won';
+  const isClosed = d.stage === 'closed';
+  const isSilent = d.silentDays >= 7 && !['won', 'closed'].includes(d.stage);
 
   const Row = ({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--line-2)' }}>
@@ -364,7 +364,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
   );
 
   const nextStageLabel = (() => {
-    const idx = STAGES.indexOf(d.stage);
+    const idx = STAGES.indexOf(d.stage as typeof STAGES[number]);
     if (idx === -1 || idx >= STAGES.length - 1) return null;
     return STAGES[idx + 1];
   })();
@@ -420,7 +420,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
         <Row k="Owner" v={d.owner} />
         {d.opened && <Row k="Opened" v={fmtDateFull(d.opened)} mono />}
         {d.filed && <Row k="Filed" v={fmtDateFull(d.filed)} mono />}
-        {d.resolved && <Row k={isWon ? 'Won' : 'Resolved'} v={fmtDateFull(d.resolved)} mono />}
+        {d.resolved && <Row k={isWon ? 'won' : 'Resolved'} v={fmtDateFull(d.resolved)} mono />}
 
         {d.notes && (
           <>
@@ -438,7 +438,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
       </div>
 
       {/* NEW: Quick Note Input */}
-      {!['Won', 'Closed'].includes(d.stage) && (
+      {!['won', 'closed'].includes(d.stage) && (
         <div style={{ marginTop: 24 }}>
           <textarea 
             placeholder="Add an internal note or carrier response update..."
@@ -458,7 +458,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
         </div>
       )}
 
-      {!['Won', 'Closed'].includes(d.stage) && (
+      {!['won', 'closed'].includes(d.stage) && (
         <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', gap: 7 }}>
           {isSilent && (
             <Btn variant="amber" size="md" onClick={() => onMarkResponded(d)}>
@@ -468,7 +468,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
           <div style={{ flex: 1 }} />
           {nextStageLabel && (
             <Btn variant="primary" size="md" onClick={() => onAdvance(d)}>
-              {nextStageLabel === 'Won' ? 'Mark won →' : `Advance to ${nextStageLabel} →`}
+              {nextStageLabel === 'won' ? 'Mark won →' : `Advance to ${nextStageLabel} →`}
             </Btn>
           )}
         </div>
@@ -480,12 +480,12 @@ function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
 // ── helper: build a trail event for a newly-advanced stage ──────
 function eventForStage(stage: string, date: string): TrailEvent {
   switch (stage) {
-    case 'In review': return { kind: 'reviewed',  date, actor: 'Team', note: 'Marked in review.' };
-    case 'Submitted': return { kind: 'filed',     date, actor: 'Team', note: 'Filed with carrier.' };
-    case 'Escalated': return { kind: 'escalated', date, actor: 'Team', note: 'Escalated for follow-up.' };
-    case 'Won':       return { kind: 'won',       date, actor: 'Carrier', note: 'Marked won.' };
-    case 'Closed':    return { kind: 'closed',    date, actor: 'Team', note: 'Closed.' };
-    default:          return { kind: 'opened',    date, actor: 'Team', note: stage };
+    case 'pending_review': return { kind: 'reviewed',  date, actor: 'Team', note: 'Marked in review.' };
+    case 'filed':          return { kind: 'filed',     date, actor: 'Team', note: 'Filed with carrier.' };
+    case 'appealed':       return { kind: 'escalated', date, actor: 'Team', note: 'Escalated for follow-up.' };
+    case 'won':            return { kind: 'won',       date, actor: 'Carrier', note: 'Marked won.' };
+    case 'closed':         return { kind: 'closed',    date, actor: 'Team', note: 'Closed.' };
+    default:               return { kind: 'opened',    date, actor: 'Team', note: stage };
   }
 }
 

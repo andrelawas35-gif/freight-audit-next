@@ -12,14 +12,29 @@ type Row = {
 
 const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
+// Canonical dispute status pills (ADR 0005). Legacy Airtable-era statuses
+// are kept as fallback mappings with the same rendering as their canonical equivalent.
 const STATUS_PILL: Record<string, { label: string; bg: string; fg: string }> = {
-  Open:        { label: 'OPN', bg: 'rgba(94,106,210,0.12)',  fg: '#818cf8' },
-  'In review': { label: 'REV', bg: 'rgba(94,106,210,0.12)',  fg: '#818cf8' },
-  Submitted:   { label: 'SUB', bg: 'rgba(167,139,250,0.1)',  fg: '#a78bfa' },
-  Escalated:   { label: 'ESC', bg: 'rgba(251,191,36,0.1)',   fg: '#fbbf24' },
-  Won:         { label: 'WON', bg: 'rgba(74,222,128,0.1)',   fg: '#4ade80' },
-  Closed:      { label: 'LST', bg: 'rgba(248,113,113,0.08)', fg: '#f87171' },
+  // ── Canonical ──────────────────────────────────────────────────
+  pending_review:    { label: 'REV', bg: 'rgba(94,106,210,0.12)',  fg: '#818cf8' },
+  filed:             { label: 'FLD', bg: 'rgba(167,139,250,0.1)',  fg: '#a78bfa' },
+  carrier_responded: { label: 'RSP', bg: 'rgba(251,191,36,0.1)',   fg: '#fbbf24' },
+  won:               { label: 'WON', bg: 'rgba(74,222,128,0.1)',   fg: '#4ade80' },
+  dismissed:         { label: 'DIS', bg: 'rgba(248,113,113,0.08)', fg: '#f87171' },
+  partial:           { label: 'PRT', bg: 'rgba(251,191,36,0.1)',   fg: '#fbbf24' },
+  appealed:          { label: 'APP', bg: 'rgba(251,191,36,0.1)',   fg: '#fbbf24' },
+  closed:            { label: 'CLD', bg: 'rgba(248,113,113,0.08)', fg: '#f87171' },
+  // ── Legacy fallbacks ───────────────────────────────────────────
+  Open:              { label: 'REV', bg: 'rgba(94,106,210,0.12)',  fg: '#818cf8' },
+  'In review':       { label: 'REV', bg: 'rgba(94,106,210,0.12)',  fg: '#818cf8' },
+  Submitted:         { label: 'FLD', bg: 'rgba(167,139,250,0.1)',  fg: '#a78bfa' },
+  Escalated:         { label: 'RSP', bg: 'rgba(251,191,36,0.1)',   fg: '#fbbf24' },
+  Won:               { label: 'WON', bg: 'rgba(74,222,128,0.1)',   fg: '#4ade80' },
+  Closed:            { label: 'CLD', bg: 'rgba(248,113,113,0.08)', fg: '#f87171' },
 };
+
+// Active = not in a terminal state (won, dismissed, closed)
+const TERMINAL_STATUSES = new Set(['won', 'dismissed', 'closed']);
 
 const FILTERS = [
   { key: 'all', label: 'ALL' },
@@ -31,7 +46,7 @@ const FILTERS = [
 type Filter = typeof FILTERS[number]['key'];
 
 function Pill({ status }: { status: string }) {
-  const s = STATUS_PILL[status] || STATUS_PILL.Open;
+  const s = STATUS_PILL[status] || STATUS_PILL.pending_review;
   return (
     <span style={{
       fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
@@ -60,7 +75,13 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   );
 }
 
-const TIMELINE_STAGES = ['Open', 'In review', 'Submitted', 'Escalated', 'Won'];
+// Canonical lifecycle order (ADR 0005 state machine)
+const TIMELINE_STAGES: readonly string[] = [
+  'pending_review',
+  'filed',
+  'carrier_responded',
+  'won',
+];
 
 export function DisputesList({ rows, totalFiled, activeCount, recovered, avgDays, loadError }: {
   rows: Row[]; totalFiled: number; activeCount: number; recovered: number; avgDays: number; loadError?: string | null;
@@ -70,9 +91,9 @@ export function DisputesList({ rows, totalFiled, activeCount, recovered, avgDays
   const mayHaveMoreRows = rows.length >= 500;
 
   const filtered = rows.filter((r) => {
-    if (filter === 'active') return r.status !== 'Won' && r.status !== 'Closed';
-    if (filter === 'won') return r.status === 'Won';
-    if (filter === 'lost') return r.status === 'Closed';
+    if (filter === 'active') return !TERMINAL_STATUSES.has(r.status);
+    if (filter === 'won') return r.status === 'won';
+    if (filter === 'lost') return r.status === 'dismissed' || r.status === 'closed';
     return true;
   });
 

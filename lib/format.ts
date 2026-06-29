@@ -46,7 +46,19 @@ export const daysAgo = (iso: string | undefined) => {
   return d !== null ? -d : null;
 };
 
-export const STAGES = ['Open', 'In review', 'Submitted', 'Escalated', 'Won', 'Closed'];
+// Canonical dispute lifecycle order (ADR 0005, lib/disputes/state-machine.ts).
+// Legacy Airtable-era stages (Open/In review/Submitted/Escalated/Won/Closed)
+// are superseded; kept here as a deprecated export for any lingering references.
+export const STAGES = [
+  'pending_review',
+  'filed',
+  'carrier_responded',
+  'won',
+  'dismissed',
+  'partial',
+  'appealed',
+  'closed',
+] as const;
 
 export type Confidence = 'high' | 'medium' | 'borderline';
 

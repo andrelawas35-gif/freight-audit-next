@@ -12,6 +12,10 @@
 
 BEGIN;
 
+-- ── 0. Ensure neondb_owner can assume the app_tenant role ───────────
+-- Required for getTenantSql() which connects as owner then SET ROLE app_tenant.
+GRANT app_tenant TO neondb_owner;
+
 -- ── 1. Extend grants to portal read-set tables ──────────────────────
 
 -- Clients — own-row tenancy (key is `id`, not `client_id`)
@@ -75,13 +79,31 @@ BEGIN
   END IF;
 END $$;
 
--- ── 3. Re-assert RLS ENABLE on 0006 tables (idempotent) ────────────
--- These are safe no-ops if already enabled; they serve as documentation
--- of the full protected set.
+-- ── 3. Re-assert RLS ENABLE + CREATE missing policies on 0006 tables ──
+-- 0006's policies for business tables were conditional (client_id added by 0011)
+-- and never executed. This section enables RLS AND creates the policies.
+-- Safe no-ops where already present; idempotent.
 
+-- Business tables (client_id added by 0011)
 ALTER TABLE "Invoices"                ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_invoices ON "Invoices";
+CREATE POLICY tenant_isolation_invoices ON "Invoices"
+  FOR ALL TO app_tenant
+  USING (client_id = current_setting('app.current_tenant', true));
+
 ALTER TABLE "Audit Results"           ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_audit_results ON "Audit Results";
+CREATE POLICY tenant_isolation_audit_results ON "Audit Results"
+  FOR ALL TO app_tenant
+  USING (client_id = current_setting('app.current_tenant', true));
+
 ALTER TABLE "Disputes"                ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_disputes ON "Disputes";
+CREATE POLICY tenant_isolation_disputes ON "Disputes"
+  FOR ALL TO app_tenant
+  USING (client_id = current_setting('app.current_tenant', true));
+
+-- Platform tables (policies already exist from 0006; ENABLE is idempotent re-assert)
 ALTER TABLE client_insurance_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE insurance_policy_rules    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE policy_rules              ENABLE ROW LEVEL SECURITY;

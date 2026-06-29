@@ -94,7 +94,14 @@ Referential integrity was hardened in Wave 2:
 | `preventable_loss`, `uninsured_exposure` | Dollars |
 | `created_at` | Timestamp |
 
-### `gateway_readiness_assessments` — consulting deliverable
+### `gateway_readiness_assessments` — consulting deliverable (derived snapshot)
+
+> **Dollar figures are snapshots, not authoritative.** `preventable_margin_loss` and
+> `uninsured_exposure` are copied from `policy_backtest_runs` at assessment time.
+> If they disagree with the backtest run for the same `backtest_run_id`, the backtest
+> run is authoritative. The snapshot exists so the readiness report can be delivered
+> and archived without re-running the backtest. See O5 in
+> [`data-layer.md`](../data-layer.md#backtest-dollar-duplication-o5--documented-2026-06-27).
 
 | Column | Purpose |
 |--------|---------|

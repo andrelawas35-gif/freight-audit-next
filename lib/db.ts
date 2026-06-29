@@ -68,6 +68,11 @@ export async function getTenantSql(clientId: string) {
     _tenantPool = new Pool({ connectionString: url });
   }
   const client = await _tenantPool.connect();
+  // Reset role and tenant first — pooled connections reuse sessions
+  // and a previous checkout may have left stale SET ROLE or SET app.current_tenant.
+  await client.query('RESET ROLE');
+  await client.query('RESET app.current_tenant');
+  await client.query('SET ROLE app_tenant');
   await client.query('SET app.current_tenant = $1', [clientId]);
   return client;
 }

@@ -31,7 +31,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 
 1. **Audit completeness** - engines use keyset pagination (`fetchAllRecords`), never bounded `fetchRecords`. Financial processing must be complete or fail visibly.
 2. **Run isolation** - `created_at <= run_started_at` cutoff prevents mid-run ingestion from being included. Sourced from `audit_jobs.started_at`.
-3. **Transaction safety** - all financial write paths wrapped in `BEGIN`/`COMMIT`/`ROLLBACK`. `batchCreate({ inTransaction: true })` skips nested `BEGIN`.
+3. **Transaction safety** - all financial write paths use `sql.transaction([...])` (Neon's documented transaction API). `batchCreate({ inTransaction: true })` skips nested `BEGIN`. Raw `sql.query('BEGIN'/'COMMIT')` is deprecated — do not use it for multi-statement atomicity.
 4. **AI is suggest-only** - dispute parser and data clerk propose; humans confirm. Never auto-apply.
 5. **Rulebook precedence** - contract (score 30) -> carrier (20) -> global (10). Service-specific +5. Do not change without business review.
 6. **Client scoping** - portal queries always filter by `session.user.clientId`. No client selector exposed.
@@ -45,8 +45,8 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 - **Quoted column names** on business tables (`"Invoice number"`). Snake_case on platform tables. Do not mix.
 - **Install**: `npm install --legacy-peer-deps` (next-auth beta peer conflicts; codified in `.npmrc`).
 - **Auth config**: `trustHost: true` required for non-Vercel deployments.
-- **DB access**: all modules import `getSql()` from `lib/db.ts` - single connection singleton.
-- **Schema**: `db/migrations/*.sql` are the authoritative schema definition. `db/schema.ts` is a generated typed read-model (introspected from live DB via `drizzle-kit introspect`). Raw SQL queries via `lib/db.ts` work alongside. Do NOT hand-edit `db/schema.ts`.
+- **DB access**: all modules import `getSql()` from `lib/db.ts` - single connection singleton. Portal client-path reads use `getTenantSql(clientId)` (RLS-enforced via `app_tenant` role).
+- **Schema**: `db/migrations/*.sql` are the **authoritative schema definition** (raw SQL, applied idempotently by `db/migrate.ts`). `db/schema.ts` is a **downstream typed read-model** (best-effort, maintained alongside migrations) — it may lag. When in doubt, the migration files are authoritative. Do NOT hand-edit `db/schema.ts` without a corresponding migration. Add columns/tables via migrations; update `db/schema.ts` to match. The Drizzle journal (`_journal.json`) is frozen; `drizzle-kit` is not used for migrations.
 - **Job queue**: Postgres-backed (`audit_jobs` table), `FOR UPDATE SKIP LOCKED` claim pattern. No external deps.
 - **Tests**: `npm test` (Vitest). Coverage exists for pagination/chunk boundaries.
 

@@ -27,7 +27,10 @@ export function ComplianceTabShell({
           gap: 12,
         }}
       >
-        <CoverageGapFeed insuranceExposure={complianceData.insuranceExposure} />
+        <CoverageGapFeed
+          insuranceExposure={complianceData.insuranceExposure}
+          scopeExclusions={complianceData.scopeExclusions}
+        />
         <WarehouseScorecard data={complianceData} />
       </div>
 

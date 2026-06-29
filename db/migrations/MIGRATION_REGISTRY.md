@@ -1,7 +1,7 @@
 # Migration Number Registry
 
-> **Owner**: E1 (Platform / Migration Toolchain)
-> **Updated**: 2026-06-26
+> **Owner**: Controller (C0) — formerly E1
+> **Updated**: 2026-06-27
 > 
 > This registry is the single source of truth for migration number allocation.
 > All migration-writing tracks (E3, E4, E5) MUST claim numbers here before writing SQL.
@@ -14,22 +14,25 @@
 | 0003 | — | applied | SFTP fetch tracking (sftp_processed_files) |
 | 0004 | — | applied | Gateway insurance intelligence tables |
 | 0005 | — | applied | Policy intelligence MVP (policy tables) |
-| 0006 | — | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS) |
+| 0006 | C0 | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS — conditional on business tables) |
 | 0007 | — | applied | Backtest correctness (dollar storage, result tracking) |
 | 0008 | — | applied | Soft delete columns (deleted_at on key tables) |
 | 0009 | — | applied | Audit trail (upload_logs, change tracking) |
 | 0010 | — | applied | Ingestion lineage (source tracking on staged records) |
-| 0011 | — | applied | Grilling schema contract (CHECK constraints, column normalization) |
-| 0012 | — | applied | Phase 2 extraction pipeline schema |
+| 0011 | — | applied | Grilling schema contract (scalar client_id, CHECK constraints, dispute status) |
+| 0012 | — | applied | Phase 2 extraction pipeline schema (clause_embeddings + pgvector) |
 | 0013 | — | applied | Policy scope exclusions table |
 | 0014 | — | applied | Taxonomy discovery (Phase 4 columns, indexes, taxonomy_admin) |
-| 0015 | E4 | reserved | FK constraints (G1) |
-| 0016 | E4 | reserved | CHECK constraints (G5) |
-| 0017 | E4 | reserved | policy_attestations table (G2+O4) |
-| 0018 | E3 | created | RLS rollout portal read-set (ADR 0013) |
-| 0019 | E5 | created | staff_reviewed column (ADR 0015) |
-| 0020 | E5 | created | clause_hash index |
+| 0015 | E4 | applied | FK constraints (G1) |
+| 0016 | E4 | applied | CHECK constraints (G5) |
+| 0017 | E4 | applied | policy_attestations table (G2+O4) |
+| 0018 | E3 | applied | RLS rollout portal read-set + business table policies + GRANT (ADR 0013) |
+| 0019 | E5 | applied | staff_reviewed column (ADR 0015) |
+| 0020 | E5 | applied | clause_hash index (btree→hash dedup) |
 | 0021 | E5 | reserved | T3 batch index / pipeline schema |
+| **0022** | **E4** | **available** | **Next FK / schema integrity migration** |
+| **0023** | **E5** | **available** | **Next pipeline fix migration** |
+| **0024** | **E6** | **available** | **CI / stack hardening (if migration needed)** |
 
 ## Allocation Protocol
 

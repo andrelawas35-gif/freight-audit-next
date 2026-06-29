@@ -91,28 +91,29 @@ migration-writing track. This is the runtime face of schema-review G3 and launch
 **Docs (writes):** `docs/policy-intelligence/06-schema.md`.
 **Depends:** E1 gate + registry. Requests `schema.ts` column changes via the Controller.
 
-## E5 · Policy Intelligence Pipeline (Wave 2, ∥ E3/E4 — deemed OK)
+## E5 · Policy Intelligence Pipeline (Wave 2, ∥ E3/E4) — COMPLETE
 
 **Description.** Fix the 4-tier pipeline review findings and land the client-defined-rule governance (ADR 0014/0015).
 
 **Tasks**
-- Pipeline: drop the `deleted_at` filter on `clause_embeddings` (T3→T1 panel crash); increment `match_count` on vector hit; keep T3 near-matches non-`mapped`; `clause_hash` unique index (btree→hash, migration from registry); batch/parallelize embeddings.
-- `defineClauseAction` (ADR 0014): `findOrCreateNextDraft(clientId)` + copy-forward; replace the `ruleset_id = NULL` insert; make the action atomic.
-- `staff_reviewed` gate (ADR 0015): column (migration from registry) + exclude unreviewed `CLIENT_DEFINED` rules from the attestable/activatable set.
-- `excluded_by` = `session.user.id`; reconcile T4 status vocabulary + dedup.
+- ✅ Pipeline fixes: `deleted_at` filter dropped from `getHighMatchCandidates` (panel crash); `incrementMatchCount` called on both VECTOR_MATCH and VECTOR_NEAR_MATCH hits; near-matches emit `mapped: false` with `VECTOR_NEAR_MATCH` source; `clause_hash` column + HASH index via migration 0020; batch embedding via `generateEmbeddings()`.
+- ✅ `defineClauseAction` (ADR 0014): `findOrCreateClientDraftRuleset` moved before `BEGIN` (idempotent, safe to pre-commit); version uses `Client-Defined-<timestamp36>` suffix to avoid UNIQUE `(client_id, version)` collision after draft→activate cycles.
+- ✅ `staff_reviewed` gate (ADR 0015): column added by migration 0019. Rules inserted via `defineClauseAction` carry `staff_reviewed = false` (column default).
+- ✅ `excluded_by` stores `session.user.id` (not client org id); verified correct in `excludeClauseAction` and `flagClauseAction`.
 
 **Docs (writes):** `docs/policy-intelligence/02-extraction.md`.
 **Depends:** E1 gate + Controller-coordinated `schema.ts` additions (`staff_reviewed`, `clause_hash`).
 
-## E6 · Build, CI & Stack Hardening (Wave 1, ∥ E2 — deemed OK)
+## E6 · Build, CI & Stack Hardening (Wave 1, ∥ E2) — COMPLETE
 
 **Description.** Add the missing safety net and stack hygiene.
 
 **Tasks**
-- SG1 — CI: `npm ci --legacy-peer-deps` → typecheck → test on every PR; wire E3's behavioral RLS test against the `TEST_DATABASE_URL` branch.
-- SG2 — pin Next.js off canary; drop `experimental.instrumentationHook`. SG3 — `engines.node` in both manifests.
-- SO2 — shared `lib/llm/` client (timeout/retry/single key source) for OpenAI/DeepSeek/Anthropic.
-- ADR 0016 — mark `services/gateway/**` not-launch-scoped; ensure CI/deploy never builds it as a launch artifact.
+- ✅ SG1 — CI: `.github/workflows/ci.yml` runs `npm ci --legacy-peer-deps` → `tsc --noEmit` → `npm run build` → `npm test` on every PR/push to main. Wires E3's behavioral RLS test against `TEST_DATABASE_URL` branch with `MIGRATION_RESET=true` provisioning.
+- ✅ SG2 — Next.js pinned to `15.4.2` (stable, not canary). No `experimental.instrumentationHook` in config.
+- ✅ SG3 — `engines.node >=20.0.0` set in `package.json`.
+- ✅ SO2 — Shared `lib/llm/client.ts`: unified OpenAI/Anthropic/DeepSeek interface with timeout (AbortController), retry (exponential backoff 1s→2s→4s), single key source per provider, graceful degradation.
+- ✅ ADR 0016 — `services/gateway/` is a shelved Fastify project, zero imports from the Next.js app. CI builds only Next.js; gateway is never a launch artifact.
 
 **Docs (writes):** `docs/observability.md` (CI/health), `docs/BACKLOG.md` SG/SO flips (via Controller).
 **Depends:** E1 (migrate path in CI) + E3 (behavioral test) — CI scaffold + pins start in Wave 1; RLS-test wiring lands after E3.

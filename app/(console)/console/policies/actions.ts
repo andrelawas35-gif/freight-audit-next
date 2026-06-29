@@ -18,6 +18,13 @@ import {
   POLICY_STATUSES,
   POLICY_TYPES,
 } from '@/lib/intelligence/policy-evaluator';
+import {
+  runVisionPipeline,
+  ALLOWED_VISION_MIME_TYPES,
+  MAX_VISION_UPLOAD_BYTES,
+} from '@/lib/intelligence/vision';
+import type { DocumentTypeTag } from '@/lib/intelligence/vision';
+import { put } from '@vercel/blob';
 
 export type PolicyActionState = { ok: boolean; error?: string; message?: string } | undefined;
 
@@ -278,4 +285,193 @@ function revalidatePolicy(policyId: string) {
   revalidatePath(`/policies/${policyId}`);
   revalidatePath(`/policies/${policyId}/rules`);
   revalidatePath(`/policies/${policyId}/backtests`);
+}
+
+// ── Vision Document Upload ──────────────────────────────────────────
+
+const visionUploadSchema = z.object({
+  clientId: z.string().min(1),
+  policyId: z.string().min(1),
+  documentType: z.enum(['COI', 'BOL', 'delivery_receipt', 'unknown'] as const),
+  effectiveFrom: z.string().trim().optional(),
+  effectiveTo: z.string().trim().optional(),
+  summary: z.string().trim().optional(),
+});
+
+/**
+ * Upload a scanned document image, run vision extraction via Gemini,
+ * and persist the results to policy_documents.
+ *
+ * Flow:
+ *   1. Validate staff auth + form data
+ *   2. Read file from FormData, validate size + MIME type
+ *   3. Upload to Vercel Blob
+ *   4. Convert to base64
+ *   5. Run vision pipeline (classify → extract → persist)
+ */
+export async function addVisionDocumentAction(
+  _prev: PolicyActionState,
+  formData: FormData,
+): Promise<PolicyActionState> {
+  const session = await requireStaff();
+  const parsed = visionUploadSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message);
+
+  // Read uploaded file
+  const file = formData.get('file') as File | null;
+  if (!file || file.size === 0) return fail('Please select a document image to upload.');
+
+  // Validate MIME type
+  if (!ALLOWED_VISION_MIME_TYPES.includes(file.type)) {
+    return fail(`Unsupported file type: ${file.type}. Allowed: ${ALLOWED_VISION_MIME_TYPES.join(', ')}`);
+  }
+
+  // Validate file size
+  if (file.size > MAX_VISION_UPLOAD_BYTES) {
+    return fail(`File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Maximum: ${MAX_VISION_UPLOAD_BYTES / 1024 / 1024} MB.`);
+  }
+
+  try {
+    // Upload to Vercel Blob
+    const blob = await put(file.name, file, {
+      access: 'public',
+      addRandomSuffix: true,
+    });
+
+    // Convert file to base64 for Gemini API
+    const arrayBuffer = await file.arrayBuffer();
+    const fileBase64 = Buffer.from(arrayBuffer).toString('base64');
+
+    // Run vision pipeline
+    const result = await runVisionPipeline({
+      clientId: parsed.data.clientId,
+      policyId: parsed.data.policyId,
+      documentType: parsed.data.documentType as DocumentTypeTag,
+      fileName: file.name,
+      fileBase64,
+      mimeType: file.type,
+      storedImageUrl: blob.url,
+      uploadedBy: session.user?.email ?? session.user?.id ?? 'unknown',
+      effectiveFrom: parsed.data.effectiveFrom ?? null,
+      effectiveTo: parsed.data.effectiveTo ?? null,
+      summary: parsed.data.summary ?? null,
+    });
+
+    revalidatePolicy(parsed.data.policyId);
+
+    if (result.visionExtracted && result.extraction) {
+      const readableCount = result.extraction.fields.length;
+      const unreadableCount = result.extraction.unreadableFields.length;
+      return {
+        ok: true,
+        message: `Document uploaded and extracted: ${readableCount} fields read, ${unreadableCount} unreadable. Review in the document list.`,
+      };
+    }
+
+    return {
+      ok: true,
+      message: 'Document uploaded. Extraction failed — staff review needed.',
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[addVisionDocumentAction] Upload/extraction failed:', msg);
+    return fail(`Upload failed: ${msg.slice(0, 200)}`);
+  }
+}
+
+// ── Golden Example Management ────────────────────────────────────────
+
+const promoteGoldenSchema = z.object({
+  documentId: z.string().min(1),
+  policyId: z.string().min(1),
+});
+
+/**
+ * Promote a vision-extracted document to a golden few-shot example.
+ * Fetches the image from Vercel Blob, caches as base64, and marks
+ * the document as is_golden_example = true for context injection.
+ */
+export async function promoteToGoldenExampleAction(
+  _prev: PolicyActionState,
+  formData: FormData,
+): Promise<PolicyActionState> {
+  await requireStaff();
+  const parsed = promoteGoldenSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message);
+
+  const sql = getSql();
+
+  // Fetch the document to get stored_image_url and extracted_fields
+  const [doc] = await sql.query(
+    `SELECT id, stored_image_url, extracted_fields
+     FROM policy_documents
+     WHERE id = $1`,
+    [parsed.data.documentId],
+  ) as Array<{ id: string; stored_image_url: string | null; extracted_fields: unknown }>;
+
+  if (!doc) return fail('Document not found.');
+  if (!doc.stored_image_url) return fail('Document has no stored image — cannot promote as golden example.');
+  if (!doc.extracted_fields) return fail('Document has no extracted fields — run extraction first.');
+
+  try {
+    // Fetch image from blob storage and encode to base64
+    const response = await fetch(doc.stored_image_url);
+    if (!response.ok) return fail(`Failed to fetch image from storage: ${response.status}`);
+    const arrayBuffer = await response.arrayBuffer();
+    const imageBase64 = Buffer.from(arrayBuffer).toString('base64');
+
+    // Mark as golden example with cached base64
+    await sql.query(
+      `UPDATE policy_documents
+       SET is_golden_example = true,
+           image_base64 = $1
+       WHERE id = $2`,
+      [imageBase64, parsed.data.documentId],
+    );
+
+    // Count total golden examples for this document type
+    const [countRow] = await sql.query(
+      `SELECT COUNT(*)::int AS count
+       FROM policy_documents
+       WHERE is_golden_example = true
+         AND document_type = (SELECT document_type FROM policy_documents WHERE id = $1)`,
+      [parsed.data.documentId],
+    ) as Array<{ count: number }>;
+
+    revalidatePolicy(parsed.data.policyId);
+
+    const examplesWord = countRow.count === 1 ? 'example' : 'examples';
+    return {
+      ok: true,
+      message: `Document promoted to golden example. ${countRow.count} ${examplesWord} active for this document type.`,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[promoteToGoldenExampleAction] Failed:', msg);
+    return fail(`Promotion failed: ${msg.slice(0, 200)}`);
+  }
+}
+
+/**
+ * Demote a golden example back to a regular document.
+ */
+export async function demoteGoldenExampleAction(
+  _prev: PolicyActionState,
+  formData: FormData,
+): Promise<PolicyActionState> {
+  await requireStaff();
+  const parsed = promoteGoldenSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message);
+
+  const sql = getSql();
+  await sql.query(
+    `UPDATE policy_documents
+     SET is_golden_example = false,
+         image_base64 = NULL
+     WHERE id = $1`,
+    [parsed.data.documentId],
+  );
+
+  revalidatePolicy(parsed.data.policyId);
+  return { ok: true, message: 'Document removed from golden examples.' };
 }

@@ -47,9 +47,11 @@ most common mistake:
   insurance is one (`policy_type = 'insurance_policy'`). The broader workflow
   (documents → rulesets → backtests) hangs off this.
 
-Direction: the general `policy_rules` shape is the long-term evaluation target;
-`insurance_policy_rules` remains a specialized table the evaluator also reads. See
-[`06-schema.md`](06-schema.md).
+**Direction (grilling session 2026-06-27):** `insurance_policy_rules` converges into
+`policy_rules` (category `insurance_*`) before the first paid Compliance Risk Assessment.
+`client_insurance_policies` becomes a 1:1 extension of `client_policies` via FK `policy_id`.
+The general `policy_rules` shape is the single evaluation target; `insurance_policy_rules`
+is deprecated and will be dropped after migration. See [`06-schema.md`](06-schema.md).
 
 ## Key concepts
 

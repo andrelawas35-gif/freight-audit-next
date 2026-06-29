@@ -75,6 +75,23 @@ Tracked in [`BACKLOG.md`](BACKLOG.md#schema-architecture-review-2026-06-27). Sum
 - **CHECK discipline** — several status/type/source columns lack constraints, allowing value drift (G5).
 - **Overlaps** — `policy_rules`↔`insurance_policy_rules`, `client_policies`↔`client_insurance_policies`, gateway tag columns↔`gateway_behavioral_tags`, and dual attestation/backtest-dollar storage (O1–O5).
 
+### Backtest-Dollar Duplication (O5 — Documented 2026-06-27)
+
+Three tables store dollar figures that trace back to the same backtest evaluation:
+
+| Table | Role | Dollar columns |
+|-------|------|----------------|
+| `policy_backtest_runs` | **Authoritative.** Run-level aggregates computed by the backtest engine. | `preventable_margin_loss`, `uninsured_exposure` |
+| `policy_backtest_results` | Detail rows. Per-rule, per-shipment breakdown; sum of `preventable_loss` across results should equal the run's `preventable_margin_loss`. | `preventable_loss`, `uninsured_exposure` |
+| `gateway_readiness_assessments` | **Derived snapshot.** Copied from the backtest run at assessment time for the consulting deliverable. Not independently authoritative — backtest runs are the source of truth. | `preventable_margin_loss`, `uninsured_exposure` |
+
+**Rule:** If `gateway_readiness_assessments.preventable_margin_loss` disagrees with
+`policy_backtest_runs.preventable_margin_loss` for the same `backtest_run_id`, the backtest
+run is authoritative. The assessment copy exists so the readiness report can be delivered,
+archived, and re-delivered without re-running the backtest — it is a point-in-time snapshot,
+not a second source of truth. The `backtest_run_id` FK on `gateway_readiness_assessments`
+(added in migration 0015) provides the lineage back to the authoritative row.
+
 ## Data Access Layer (`lib/db/records.ts`)
 
 Named `lib/airtable.ts` historically; renamed to `lib/db/records.ts` (a re-export shim remains). Pure Postgres now.

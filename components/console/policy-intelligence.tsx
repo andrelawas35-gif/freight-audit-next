@@ -7,6 +7,9 @@ import {
   addRuleAction,
   activateRulesetAction,
   attestRulesetAction,
+  addVisionDocumentAction,
+  promoteToGoldenExampleAction,
+  demoteGoldenExampleAction,
   createPolicyAction,
   createRulesetAction,
   runBacktestAction,
@@ -27,6 +30,7 @@ import type {
   PolicyRuleRow,
   PolicyRulesetRow,
 } from '@/lib/intelligence/policy-service';
+import type { ExtractionResult } from '@/lib/intelligence/vision';
 
 const inputStyle: React.CSSProperties = {
   background: 'var(--surface-sunk)',
@@ -169,10 +173,16 @@ export function PolicyDetailWorkbench({
       <SectionLabel>Add document metadata</SectionLabel>
       <PolicyDocumentForm policy={policy} />
 
+      <SectionLabel>Upload scanned document (AI vision extraction)</SectionLabel>
+      <VisionDocumentUploadForm
+        clientId={policy.client_id}
+        policyId={policy.id}
+      />
+
       <SectionLabel right={<span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>source materials are staff-only</span>}>
         Documents
       </SectionLabel>
-      <DocumentTable documents={documents} />
+      <VisionDocumentTable documents={documents} />
 
       <SectionLabel>Create ruleset</SectionLabel>
       <RulesetForm policy={policy} />
@@ -814,3 +824,274 @@ const buttonStyle: React.CSSProperties = {
   fontWeight: 700,
   cursor: 'pointer',
 };
+
+// ── Vision Document Upload Form ────────────────────────────────────
+
+const VISION_DOC_TYPES = [
+  { value: 'COI', label: 'COI — Certificate of Insurance (ACORD 25)' },
+  { value: 'BOL', label: 'BOL — Bill of Lading' },
+  { value: 'delivery_receipt', label: 'Delivery Receipt' },
+  { value: 'unknown', label: 'Other / Unknown' },
+];
+
+function VisionDocumentUploadForm({
+  clientId,
+  policyId,
+}: {
+  clientId: string;
+  policyId: string;
+}) {
+  const [state, action, pending] = useActionState<PolicyActionState, FormData>(
+    addVisionDocumentAction,
+    undefined,
+  );
+
+  return (
+    <Card>
+      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 10 }}>
+        Upload a scanned, photographed, or handwritten freight document for AI extraction.
+        Supported: PNG, JPEG, WebP, GIF, BMP, TIFF, PDF (scanned).
+      </div>
+      <form action={action} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end' }}>
+        <input type="hidden" name="clientId" value={clientId} />
+        <input type="hidden" name="policyId" value={policyId} />
+        <Col label="Document type">
+          <select name="documentType" required style={inputStyle} defaultValue="COI">
+            {VISION_DOC_TYPES.map((dt) => (
+              <option key={dt.value} value={dt.value}>{dt.label}</option>
+            ))}
+          </select>
+        </Col>
+        <Col label="Scan / photo file">
+          <input
+            name="file"
+            type="file"
+            required
+            accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,application/pdf"
+            style={inputStyle}
+          />
+        </Col>
+        <Col label="Summary (optional)">
+          <input name="summary" placeholder="What this document is" style={inputStyle} />
+        </Col>
+        <Col label="Effective from">
+          <input name="effectiveFrom" type="date" style={inputStyle} />
+        </Col>
+        <Col label="Effective to">
+          <input name="effectiveTo" type="date" style={inputStyle} />
+        </Col>
+        <button disabled={pending} style={buttonStyle}>
+          {pending ? 'Extracting...' : 'Upload & extract'}
+        </button>
+      </form>
+      <ActionNote state={state} />
+    </Card>
+  );
+}
+
+// ── Vision Document Table ──────────────────────────────────────────
+
+/**
+ * Document table with vision extraction result display.
+ * Shows extracted fields with confidence indicators for vision-processed documents.
+ */
+function VisionDocumentTable({ documents }: { documents: PolicyDocumentRow[] }) {
+  if (documents.length === 0) {
+    return (
+      <Card pad={0} style={{ overflow: 'hidden' }}>
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Type</th>
+              <th>Classification</th>
+              <th>Extraction</th>
+              <th>Fields</th>
+              <th style={{ width: 80 }}>Golden</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={6}>
+                <ConsoleEmptyState
+                  icon="file"
+                  heading="No documents yet"
+                  description="Upload a text document or scan for extraction."
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </Card>
+    );
+  }
+
+  return (
+    <Card pad={0} style={{ overflow: 'hidden' }}>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Type</th>
+            <th>Classification</th>
+            <th>Status</th>
+            <th>Extracted Fields</th>
+            <th style={{ width: 80 }}>Golden</th>
+          </tr>
+        </thead>
+        <tbody>
+          {documents.map((doc) => (
+            <tr key={doc.id}>
+              <td>
+                <div style={{ fontWeight: 600, fontSize: 12 }}>{doc.file_name}</div>
+                {doc.summary && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2 }}>
+                    {doc.summary}
+                  </div>
+                )}
+              </td>
+              <td className="mono" style={{ fontSize: 11 }}>{doc.document_type}</td>
+              <td>
+                {(doc as any).content_classification ? (
+                  <ClassificationBadge classification={(doc as any).content_classification} />
+                ) : (
+                  <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>text</span>
+                )}
+              </td>
+              <td>
+                <ExtractionStatusBadge status={doc.extraction_status} />
+              </td>
+              <td>
+                <ExtractedFieldsCell doc={doc} />
+              </td>
+              <td>
+                <GoldenExampleCell doc={doc} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <TableFooter showing={documents.length} total={documents.length} label="documents" />
+      </table>
+    </Card>
+  );
+}
+
+function ClassificationBadge({ classification }: { classification: string }) {
+  const color =
+    classification === 'scan' ? 'blue' :
+    classification === 'mixed' ? 'amber' :
+    classification === 'digital' ? 'green' :
+    'neutral';
+  return <Badge color={color}>{classification}</Badge>;
+}
+
+function ExtractionStatusBadge({ status }: { status: string }) {
+  const color =
+    status === 'extracted' ? 'green' :
+    status === 'needs_review' ? 'amber' :
+    status === 'reviewed' ? 'blue' :
+    'neutral';
+  const label =
+    status === 'not_started' ? 'pending' :
+    status === 'extracted' ? 'extracted' :
+    status === 'needs_review' ? 'needs review' :
+    status === 'reviewed' ? 'reviewed' :
+    status;
+  return <Badge color={color}>{label}</Badge>;
+}
+
+function ExtractedFieldsCell({ doc }: { doc: PolicyDocumentRow }) {
+  const raw = (doc as any).extracted_fields as ExtractionResult | null;
+  if (!raw || !raw.fields || raw.fields.length === 0) {
+    // Check if it has raw_text (text path)
+    if ((doc as any).raw_text) {
+      return (
+        <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+          text extraction
+        </span>
+      );
+    }
+    return (
+      <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+        pending
+      </span>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {raw.fields.map((field) => {
+        const confidencePct = Math.round(field.confidence * 100);
+        const confidenceColor =
+          field.confidence >= 0.85 ? 'var(--green-ink)' :
+          field.confidence >= 0.50 ? 'var(--amber-ink)' :
+          'oklch(0.84 0.10 25)';
+        return (
+          <div key={field.key} style={{ fontSize: 11, display: 'flex', gap: 4, alignItems: 'baseline' }}>
+            <span style={{ fontWeight: 600, color: 'var(--ink-2)', minWidth: 120 }}>
+              {field.key.replace(/_/g, ' ')}:
+            </span>
+            <span style={{ color: 'var(--ink)' }}>{field.value}</span>
+            <span style={{ color: confidenceColor, fontSize: 10, fontWeight: 600 }}>
+              {confidencePct}%
+            </span>
+          </div>
+        );
+      })}
+      {raw.unreadableFields.length > 0 && (
+        <div style={{ fontSize: 10, color: 'oklch(0.84 0.10 25)', marginTop: 2 }}>
+          Unreadable: {raw.unreadableFields.map((f) => f.replace(/_/g, ' ')).join(', ')}
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 2 }}>
+        {raw.modelId} · {raw.latencyMs}ms
+        {raw.costEstimate != null ? ` · ~$${raw.costEstimate.toFixed(4)}` : ''}
+      </div>
+    </div>
+  );
+}
+
+// ── Golden Example Cell ─────────────────────────────────────────────
+
+const promoteBtnStyle: React.CSSProperties = {
+  fontSize: 10,
+  padding: '2px 8px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--line)',
+  background: 'var(--surface)',
+  color: 'var(--ink-2)',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+function GoldenExampleCell({ doc }: { doc: PolicyDocumentRow }) {
+  const hasImage = !!(doc as any).stored_image_url;
+  const hasFields = !!(doc as any).extracted_fields;
+  const isGolden = doc.is_golden_example;
+
+  if (isGolden) {
+    return (
+      <form action={demoteGoldenExampleAction}>
+        <input type="hidden" name="documentId" value={doc.id} />
+        <input type="hidden" name="policyId" value={doc.policy_id} />
+        <button type="submit" style={{ ...promoteBtnStyle, background: 'oklch(0.92 0.08 145)', color: 'oklch(0.4 0.06 145)', border: '1px solid oklch(0.8 0.08 145)' }}>
+          ★ active
+        </button>
+      </form>
+    );
+  }
+
+  if (!hasImage || !hasFields) {
+    return <span style={{ fontSize: 10, color: 'var(--ink-faint)' }}>—</span>;
+  }
+
+  return (
+    <form action={promoteToGoldenExampleAction}>
+      <input type="hidden" name="documentId" value={doc.id} />
+      <input type="hidden" name="policyId" value={doc.policy_id} />
+      <button type="submit" style={promoteBtnStyle}>
+        promote
+      </button>
+    </form>
+  );
+}

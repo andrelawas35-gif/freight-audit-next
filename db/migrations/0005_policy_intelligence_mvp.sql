@@ -150,6 +150,10 @@ CREATE INDEX IF NOT EXISTS idx_policy_backtest_results_client
 CREATE INDEX IF NOT EXISTS idx_policy_backtest_results_rule
   ON policy_backtest_results (rule_id);
 
+-- gateway_readiness_assessments: consulting deliverable.
+-- Dollar columns (preventable_margin_loss, uninsured_exposure) are DERIVED SNAPSHOTS
+-- copied from policy_backtest_runs at assessment time. The backtest run is authoritative.
+-- See docs/data-layer.md §Backtest-Dollar Duplication (O5).
 CREATE TABLE IF NOT EXISTS gateway_readiness_assessments (
   id text PRIMARY KEY DEFAULT ('gra' || replace(gen_random_uuid()::text, '-', '')),
   client_id text NOT NULL,

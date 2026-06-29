@@ -37,13 +37,14 @@ describe('T4 scope exclusions — storage', () => {
 
     expect(id).toBe('pse_new_001');
     expect(mockQuery).toHaveBeenCalledTimes(2);
-    // First call: check existing
-    expect(mockQuery.mock.calls[0][0]).toContain('SELECT id FROM policy_scope_exclusions');
+    // First call: check existing (any non-deleted row, regardless of status)
+    expect(mockQuery.mock.calls[0][0]).toContain('SELECT id, status FROM policy_scope_exclusions');
+    expect(mockQuery.mock.calls[0][0]).toContain('deleted_at IS NULL');
     // Second call: insert new
     expect(mockQuery.mock.calls[1][0]).toContain('INSERT INTO policy_scope_exclusions');
   });
 
-  it('storeUnmappedClause bumps updated_at when existing pending row', async () => {
+  it('storeUnmappedClause bumps updated_at when existing row found (any status)', async () => {
     mockQuery
       .mockResolvedValueOnce([{ id: 'pse_existing_001' }]) // existing check: found
       .mockResolvedValueOnce([]); // update result
@@ -64,19 +65,22 @@ describe('T4 scope exclusions — retrieval', () => {
     mockQuery.mockReset();
   });
 
-  it('getUnmappedClausesForClient returns pending_review + staff_review only', async () => {
+  it('getUnmappedClausesForClient returns pending_review + flagged clauses', async () => {
     mockQuery.mockResolvedValueOnce([
       {
         id: 'pse_1', client_id: 'client_1', policy_id: 'pol_1',
         policyName: 'Jewelry Insurance 2026', clause_ref: '§3.2',
         clause_text: 'Shall not ship via FedEx Ground.', exclusion_type: 'flag',
-        status: 'pending_review', reason: null, created_at: '2026-06-20T00:00:00Z',
+        status: 'pending_review', reason: null, flaggedAt: null, flaggedBy: null,
+        created_at: '2026-06-20T00:00:00Z',
       },
       {
         id: 'pse_2', client_id: 'client_1', policy_id: 'pol_1',
         policyName: 'Jewelry Insurance 2026', clause_ref: null,
         clause_text: 'Insurance must cover declared value.', exclusion_type: 'flag',
-        status: 'staff_review', reason: null, created_at: '2026-06-19T00:00:00Z',
+        status: 'pending_review', reason: null,
+        flaggedAt: '2026-06-19T00:00:00Z', flaggedBy: 'user_1',
+        created_at: '2026-06-19T00:00:00Z',
       },
     ]);
 
@@ -84,7 +88,8 @@ describe('T4 scope exclusions — retrieval', () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0].status).toBe('pending_review');
-    expect(rows[1].status).toBe('staff_review');
+    expect(rows[1].flaggedAt).toBe('2026-06-19T00:00:00Z');
+    expect(rows[1].flaggedBy).toBe('user_1');
     expect(rows[0].policyName).toBe('Jewelry Insurance 2026');
   });
 
@@ -94,9 +99,10 @@ describe('T4 scope exclusions — retrieval', () => {
     const rows = await getUnmappedClausesForClient('client_2');
     expect(rows).toHaveLength(0);
 
-    // Verify the query filters correctly
+    // Verify the query filters correctly — includes pending_review OR flagged
     const sql = mockQuery.mock.calls[0][0];
-    expect(sql).toContain("status IN ('pending_review', 'staff_review')");
+    expect(sql).toContain("pse.status = 'pending_review'");
+    expect(sql).toContain('pse.flagged_at IS NOT NULL');
     expect(sql).toContain('deleted_at IS NULL');
   });
 

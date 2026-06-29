@@ -45,7 +45,6 @@ const PHASE_1_TABLES = [
   { table: '"Audit Results"',           tenancy: 'scalar', column: 'client_id' },
   { table: '"Disputes"',                tenancy: 'scalar', column: 'client_id' },
   { table: 'client_insurance_policies', tenancy: 'scalar', column: 'client_id' },
-  { table: 'insurance_policy_rules',    tenancy: 'scalar', column: 'client_id' },
   { table: 'policy_rules',              tenancy: 'scalar', column: 'client_id' },
   { table: 'policy_documents',          tenancy: 'scalar', column: 'client_id' },
   { table: 'client_policies',           tenancy: 'scalar', column: 'client_id' },
@@ -182,21 +181,38 @@ const BEHAVIORAL_TEST = TEST_DB_URL ? describe : describe.skip;
 BEHAVIORAL_TEST('RLS Behavioral Isolation (live DB)', () => {
   let pool: Pool;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pool = new Pool({ connectionString: TEST_DB_URL });
+    // Clean up any leftover test data from previous runs (FORCE RLS requires tenant context)
+    const cleaner = await pool.connect();
+    try {
+      await cleaner.query('RESET ROLE');
+      await cleaner.query("SET app.current_tenant = 'client-a'");
+      await cleaner.query("DELETE FROM gateway_decisions WHERE id LIKE 'test-rls-%'");
+      await cleaner.query("SET app.current_tenant = 'client-b'");
+      await cleaner.query("DELETE FROM gateway_decisions WHERE id LIKE 'test-rls-%'");
+    } catch {
+      // Table might not exist or might not have leftover data
+    } finally {
+      cleaner.release();
+    }
   });
 
   afterAll(async () => {
     await pool.end();
-  });
+  }, 15000);
 
-  // Helper: get a tenant client and set the current tenant
+  // Helper: get a tenant client, switch to app_tenant role, and set the current tenant.
+  // Always RESET first — pooled connections reuse sessions and the setting persists.
   async function tenantClient(clientId?: string) {
     const client = await pool.connect();
+    // Switch to the restricted role so RLS policies apply
+    await client.query('SET ROLE app_tenant');
+    // Always reset the tenant setting first (pool reuse can leave a stale value)
+    await client.query('RESET app.current_tenant');
     if (clientId) {
-      await client.query('SET app.current_tenant = $1', [clientId]);
+      await client.query(`SET app.current_tenant = '${clientId}'`);
     }
-    // If no clientId, leave app.current_tenant unset
     return client;
   }
 
@@ -229,21 +245,26 @@ BEHAVIORAL_TEST('RLS Behavioral Isolation (live DB)', () => {
   it('tenant A cannot see tenant B rows on scalar tables', async () => {
     const TABLE = 'gateway_decisions';
 
-    // Seed: client-a row
-    const seedA = await pool.query(
-      `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
-       VALUES ('test-rls-a-0018', 'client-a', 'corr-a', 'block')
-       ON CONFLICT (id) DO NOTHING
-       RETURNING id`
-    );
-
-    // Seed: client-b row
-    const seedB = await pool.query(
-      `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
-       VALUES ('test-rls-b-0018', 'client-b', 'corr-b', 'allow')
-       ON CONFLICT (id) DO NOTHING
-       RETURNING id`
-    );
+    // Seed as owner with tenant context (FORCE RLS blocks owner without tenant).
+    // Always RESET ROLE first — pooled connections may have stale SET ROLE from prior checkout.
+    const seeder = await pool.connect();
+    try {
+      await seeder.query('RESET ROLE');
+      await seeder.query("SET app.current_tenant = 'client-a'");
+      await seeder.query(
+        `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
+         VALUES ('test-rls-a-0018', 'client-a', 'corr-a', 'BLOCK')
+         ON CONFLICT (id) DO NOTHING`
+      );
+      await seeder.query("SET app.current_tenant = 'client-b'");
+      await seeder.query(
+        `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
+         VALUES ('test-rls-b-0018', 'client-b', 'corr-b', 'ADVISORY')
+         ON CONFLICT (id) DO NOTHING`
+      );
+    } finally {
+      seeder.release();
+    }
 
     // Assert: client-a sees only its own row
     const clientA = await tenantClient('client-a');
@@ -269,25 +290,43 @@ BEHAVIORAL_TEST('RLS Behavioral Isolation (live DB)', () => {
       clientB.release();
     }
 
-    // Cleanup
-    await pool.query(`DELETE FROM ${TABLE} WHERE id LIKE 'test-rls-%'`);
+    // Cleanup — use tenant context (FORCE RLS applies even to owner).
+    // Always RESET ROLE first — pooled connections may have stale state.
+    const cleaner = await pool.connect();
+    try {
+      await cleaner.query('RESET ROLE');
+      await cleaner.query("SET app.current_tenant = 'client-a'");
+      await cleaner.query(`DELETE FROM ${TABLE} WHERE id = 'test-rls-a-0018'`);
+      await cleaner.query("SET app.current_tenant = 'client-b'");
+      await cleaner.query(`DELETE FROM ${TABLE} WHERE id = 'test-rls-b-0018'`);
+    } finally {
+      cleaner.release();
+    }
   });
 
   it('cross-tenant write (client-a writing client-b id) is rejected via RLS', async () => {
     const TABLE = 'gateway_decisions';
 
-    // Seed a client-b row
-    await pool.query(
-      `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
-       VALUES ('test-rls-write-0018', 'client-b', 'corr-write', 'allow')
-       ON CONFLICT (id) DO UPDATE SET decision = 'allow'`
-    );
+    // Seed as owner with tenant context (FORCE RLS blocks owner without tenant).
+    // Always RESET ROLE first — pooled connections may have stale state.
+    const seeder = await pool.connect();
+    try {
+      await seeder.query('RESET ROLE');
+      await seeder.query("SET app.current_tenant = 'client-b'");
+      await seeder.query(
+        `INSERT INTO ${TABLE} (id, client_id, correlation_id, decision)
+         VALUES ('test-rls-write-0018', 'client-b', 'corr-write', 'ADVISORY')
+         ON CONFLICT (id) DO UPDATE SET decision = 'ADVISORY'`
+      );
+    } finally {
+      seeder.release();
+    }
 
     // As client-a, try to UPDATE client-b's row
     const clientA = await tenantClient('client-a');
     try {
       const r = await clientA.query(
-        `UPDATE ${TABLE} SET decision = 'block' WHERE id = 'test-rls-write-0018' RETURNING id`
+        `UPDATE ${TABLE} SET decision = 'BLOCK' WHERE id = 'test-rls-write-0018' RETURNING id`
       );
       // RLS should prevent the UPDATE — zero rows affected
       expect(r.rows).toHaveLength(0);
@@ -295,13 +334,20 @@ BEHAVIORAL_TEST('RLS Behavioral Isolation (live DB)', () => {
       clientA.release();
     }
 
-    // Verify the client-b row is unchanged
-    const r = await pool.query(
-      `SELECT decision FROM ${TABLE} WHERE id = 'test-rls-write-0018'`
-    );
-    expect(r.rows[0]?.decision).toBe('allow');
-
-    // Cleanup
-    await pool.query(`DELETE FROM ${TABLE} WHERE id = 'test-rls-write-0018'`);
+    // Verify the client-b row is unchanged — use tenant context (FORCE RLS).
+    // Always RESET ROLE first — pooled connections may have stale state.
+    const verifier = await pool.connect();
+    try {
+      await verifier.query('RESET ROLE');
+      await verifier.query("SET app.current_tenant = 'client-b'");
+      const r = await verifier.query(
+        `SELECT decision FROM ${TABLE} WHERE id = 'test-rls-write-0018'`
+      );
+      expect(r.rows[0]?.decision).toBe('ADVISORY');
+      // Cleanup
+      await verifier.query(`DELETE FROM ${TABLE} WHERE id = 'test-rls-write-0018'`);
+    } finally {
+      verifier.release();
+    }
   });
 });

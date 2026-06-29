@@ -86,33 +86,47 @@ GRANT SELECT, INSERT, UPDATE ON gateway_decisions                 TO app_tenant;
 
 -- ── 4. Row-Level Security policies (data-protection.md D5) ────────────
 -- All comparisons are text, never ::uuid.
--- Array-membership form for text[] tenancy tables.
 -- Scalar form for client_id tables.
+-- Business tables ("Invoices", "Audit Results", "Disputes") may not have
+-- client_id yet (added by 0011); policies on those tables are created
+-- conditionally via dynamic SQL.
 
--- 4a. Array-tenancy business tables
+-- 4a. Business tables — conditional (client_id added by 0011)
 
-ALTER TABLE "Invoices" ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation_invoices ON "Invoices";
-CREATE POLICY tenant_isolation_invoices ON "Invoices"
-  FOR ALL
-  TO app_tenant
-  USING (client_id = current_setting('app.current_tenant', true));
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Invoices' AND column_name = 'client_id'
+  ) THEN
+    ALTER TABLE "Invoices" ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS tenant_isolation_invoices ON "Invoices";
+    EXECUTE 'CREATE POLICY tenant_isolation_invoices ON "Invoices" FOR ALL TO app_tenant USING (client_id = current_setting(''app.current_tenant'', true))';
+    ALTER TABLE "Invoices" FORCE ROW LEVEL SECURITY;
+  END IF;
 
-ALTER TABLE "Audit Results" ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation_audit_results ON "Audit Results";
-CREATE POLICY tenant_isolation_audit_results ON "Audit Results"
-  FOR ALL
-  TO app_tenant
-  USING (client_id = current_setting('app.current_tenant', true));
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Audit Results' AND column_name = 'client_id'
+  ) THEN
+    ALTER TABLE "Audit Results" ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS tenant_isolation_audit_results ON "Audit Results";
+    EXECUTE 'CREATE POLICY tenant_isolation_audit_results ON "Audit Results" FOR ALL TO app_tenant USING (client_id = current_setting(''app.current_tenant'', true))';
+    ALTER TABLE "Audit Results" FORCE ROW LEVEL SECURITY;
+  END IF;
 
-ALTER TABLE "Disputes" ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation_disputes ON "Disputes";
-CREATE POLICY tenant_isolation_disputes ON "Disputes"
-  FOR ALL
-  TO app_tenant
-  USING (client_id = current_setting('app.current_tenant', true));
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Disputes' AND column_name = 'client_id'
+  ) THEN
+    ALTER TABLE "Disputes" ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS tenant_isolation_disputes ON "Disputes";
+    EXECUTE 'CREATE POLICY tenant_isolation_disputes ON "Disputes" FOR ALL TO app_tenant USING (client_id = current_setting(''app.current_tenant'', true))';
+    ALTER TABLE "Disputes" FORCE ROW LEVEL SECURITY;
+  END IF;
+END $$;
 
--- 4b. Scalar client_id platform tables
+-- 4b. Scalar client_id platform tables (client_id guaranteed by DDL)
 
 ALTER TABLE client_insurance_policies ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation_client_insurance_policies ON client_insurance_policies;
@@ -156,12 +170,9 @@ CREATE POLICY tenant_isolation_gateway_decisions ON gateway_decisions
   TO app_tenant
   USING (client_id = current_setting('app.current_tenant', true));
 
--- 4c. FORCE ROW LEVEL SECURITY — belt-and-suspenders so the table owner
---     is also subject to policies (data-protection.md D2)
+-- 4c. FORCE ROW LEVEL SECURITY — belt-and-suspenders for platform tables
+--     (business-table FORCE RLS is inside the conditional DO block above)
 
-ALTER TABLE "Invoices"                FORCE ROW LEVEL SECURITY;
-ALTER TABLE "Audit Results"           FORCE ROW LEVEL SECURITY;
-ALTER TABLE "Disputes"                FORCE ROW LEVEL SECURITY;
 ALTER TABLE client_insurance_policies FORCE ROW LEVEL SECURITY;
 ALTER TABLE insurance_policy_rules    FORCE ROW LEVEL SECURITY;
 ALTER TABLE policy_rules              FORCE ROW LEVEL SECURITY;

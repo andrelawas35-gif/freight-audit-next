@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { InsuranceExposureRow } from '@/lib/intelligence/reports';
+import type { InsuranceExposureRow, ScopeExclusionSummary } from '@/lib/intelligence/reports';
 
 const usd = (n: number) => '$' + Math.round(n).toLocaleString('en-US');
 
@@ -88,8 +88,15 @@ function buildFeed(rows: InsuranceExposureRow[]): FeedRow[] {
 
 // ── Component ─────────────────────────────────────────────────────
 
-export function CoverageGapFeed({ insuranceExposure }: { insuranceExposure: InsuranceExposureRow[] }) {
+export function CoverageGapFeed({
+  insuranceExposure,
+  scopeExclusions,
+}: {
+  insuranceExposure: InsuranceExposureRow[];
+  scopeExclusions: ScopeExclusionSummary[];
+}) {
   const [filter, setFilter] = useState<string>('All');
+  const [showExcluded, setShowExcluded] = useState(false);
   const allRows = useMemo(() => buildFeed(insuranceExposure), [insuranceExposure]);
   const filtered = useMemo(() => allRows.filter((r) => matchesFilter(r.category, filter)), [allRows, filter]);
 
@@ -203,6 +210,82 @@ export function CoverageGapFeed({ insuranceExposure }: { insuranceExposure: Insu
             </div>
           ))}
         </>
+      )}
+
+      {/* ── Excluded by Client (scope exclusions from Policy Review) ── */}
+      {scopeExclusions.length > 0 && (
+        <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+          <button
+            onClick={() => setShowExcluded(!showExcluded)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              color: 'rgba(255,255,255,0.35)', fontSize: 10,
+              fontFamily: 'var(--mono)', fontWeight: 600,
+              textTransform: 'uppercase' as const, letterSpacing: '0.04em',
+            }}
+          >
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 16, height: 16, borderRadius: 9999,
+              background: 'rgba(255,255,255,0.08)', fontSize: 9,
+              transition: 'transform 0.15s',
+              transform: showExcluded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}>&#9654;</span>
+            Excluded by Client ({scopeExclusions.length})
+          </button>
+
+          {showExcluded && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {scopeExclusions.map((ex) => (
+                <div
+                  key={ex.id}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    padding: '8px 10px',
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: 6,
+                    border: '1px solid rgba(255,255,255,0.05)',
+                  }}
+                >
+                  <span style={{
+                    flexShrink: 0, marginTop: 1,
+                    fontSize: 11, opacity: 0.5,
+                  }}>&#10005;</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 11, color: 'rgba(255,255,255,0.6)',
+                      lineHeight: 1.5,
+                      overflow: 'hidden', textOverflow: 'ellipsis',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical' as const,
+                    }}>
+                      {ex.clauseText}
+                    </div>
+                    {ex.reason && (
+                      <div style={{
+                        fontSize: 10, color: 'rgba(255,255,255,0.25)',
+                        marginTop: 3, fontStyle: 'italic',
+                      }}>
+                        Reason: {ex.reason}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{
+                    flexShrink: 0, fontSize: 9,
+                    fontFamily: 'var(--mono)', fontWeight: 600,
+                    color: 'rgba(255,255,255,0.25)',
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.04em',
+                  }}>
+                    {ex.status === 'staff_approved' ? 'Reviewed' : 'Excluded'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

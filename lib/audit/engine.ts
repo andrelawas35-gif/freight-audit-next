@@ -111,7 +111,12 @@ export async function runAudit(options: {
     }
   }
 
-  // 6. Write findings + update client timestamp atomically
+  // 6. Write findings + update client timestamp atomically.
+  //    Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
+  //    Verified working on pinned @neondatabase/serverless version (session pinning
+  //    across queries). batchCreate({ inTransaction: true }) skips its own BEGIN.
+  //    TODO: migrate to sql.transaction() when batchCreate is refactored to
+  //    build synchronous query arrays (Wave 2 follow-up, BACKLOG §E4).
   if (!dryRun && findings.length > 0) {
     const sql = getSql();
     await sql.query('BEGIN');

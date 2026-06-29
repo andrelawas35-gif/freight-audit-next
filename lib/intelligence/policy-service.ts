@@ -106,12 +106,17 @@ export type PolicyDocumentRow = {
   document_type: string;
   file_name: string;
   source_url: string | null;
+  stored_image_url: string | null;
+  content_classification: string | null;
   effective_from: string | null;
   effective_to: string | null;
   extraction_status: string;
   raw_text: string | null;
+  extracted_fields: Record<string, unknown> | null;
   summary: string | null;
   uploaded_by: string | null;
+  is_golden_example: boolean;
+  image_base64: string | null;
   created_at: string;
 };
 
@@ -370,10 +375,16 @@ export async function findOrCreateClientDraftRuleset(clientId: string): Promise<
     ORDER BY effective_from DESC NULLS LAST, created_at DESC LIMIT 1
   `, [clientId]) as { id: string }[];
 
-  // 3. Create the draft ruleset
+  // 3. Generate a unique version for the new draft.
+  //    'Client-Defined' reuses across activate→draft cycles;
+  //    append a suffix to avoid the (client_id, version) UNIQUE constraint.
+  const suffix = Date.now().toString(36);
+  const version = `Client-Defined-${suffix}`;
+
+  // 4. Create the draft ruleset
   const draftId = await createRuleset({
     clientId,
-    version: 'Client-Defined',
+    version,
     status: 'draft',
   });
 
@@ -1283,13 +1294,16 @@ export type UnmappedClauseRow = {
   exclusionType: string;
   status: string;
   reason: string | null;
+  flaggedAt: string | null;
+  flaggedBy: string | null;
   createdAt: string;
 };
 
 /**
  * Fetch all unmapped/ambiguous clauses for a client that need T4 decisions.
  * Returns scope exclusion rows with status 'pending_review' plus any
- * clause_embeddings marked as 'unmapped' that don't yet have exclusion rows.
+ * flagged (flagged_at IS NOT NULL) rows awaiting staff review.
+ * Excludes decided clauses (defined, excluded, staff_approved, staff_rejected).
  */
 export async function getUnmappedClausesForClient(clientId: string): Promise<UnmappedClauseRow[]> {
   const sql = await getSql();
@@ -1305,12 +1319,17 @@ export async function getUnmappedClausesForClient(clientId: string): Promise<Unm
       pse.exclusion_type AS "exclusionType",
       pse.status,
       pse.reason,
+      pse.flagged_at AS "flaggedAt",
+      pse.flagged_by AS "flaggedBy",
       pse.created_at AS "createdAt"
     FROM policy_scope_exclusions pse
     LEFT JOIN client_policies cp ON cp.id = pse.policy_id
     WHERE pse.client_id = $1
-      AND pse.status IN ('pending_review', 'staff_review')
       AND pse.deleted_at IS NULL
+      AND (
+        pse.status = 'pending_review'
+        OR pse.flagged_at IS NOT NULL
+      )
     ORDER BY pse.created_at DESC
   `, [clientId]) as Record<string, unknown>[];
 
@@ -1326,14 +1345,19 @@ export async function getUnmappedClausesForClient(clientId: string): Promise<Unm
     exclusionType: String(r.exclusionType ?? 'pending_review'),
     status: String(r.status ?? 'pending_review'),
     reason: r.reason ? String(r.reason) : null,
+    flaggedAt: r.flaggedAt ? String(r.flaggedAt) : null,
+    flaggedBy: r.flaggedBy ? String(r.flaggedBy) : null,
     createdAt: String(r.createdAt ?? ''),
   }));
 }
 
 /**
  * Store an unmapped clause from the pipeline as a pending T4 review item.
- * Idempotent — if the same (clientId, clauseText) exists as pending_review,
+ * Idempotent — if the same (clientId, clauseText) exists in any non-deleted
+ * state (pending_review, defined, excluded, flagged, staff_approved, staff_rejected),
  * bumps updated_at instead of creating a duplicate.
+ *
+ * Invariant (grilling 2026-06-27): a clause, once decided by a client, never re-surfaces.
  */
 export async function storeUnmappedClause(params: {
   clientId: string;
@@ -1343,15 +1367,17 @@ export async function storeUnmappedClause(params: {
 }): Promise<string | null> {
   const sql = await getSql();
 
-  // Check for existing pending record
+  // Check for existing record in ANY non-deleted state.
+  // Previously only checked status = 'pending_review', causing decided clauses
+  // (defined/excluded/flagged) to re-surface as new pending_review rows.
   const existing = await sql.query(`
-    SELECT id FROM policy_scope_exclusions
-    WHERE client_id = $1 AND clause_text = $2 AND status = 'pending_review' AND deleted_at IS NULL
+    SELECT id, status FROM policy_scope_exclusions
+    WHERE client_id = $1 AND clause_text = $2 AND deleted_at IS NULL
     LIMIT 1
   `, [params.clientId, params.clauseText]) as Record<string, unknown>[];
 
   if (existing.length > 0) {
-    // Bump updated_at on existing
+    // Bump updated_at on existing — do NOT change status of a decided clause
     await sql.query(`
       UPDATE policy_scope_exclusions
       SET updated_at = NOW()

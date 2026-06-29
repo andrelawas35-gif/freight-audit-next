@@ -6,11 +6,30 @@ Disputes convert approved audit findings into carrier/client recovery workflows.
 
 ## Workflow Stages
 
+Canonical dispute state machine (ADR 0005, `lib/disputes/state-machine.ts`):
+
 ```text
-Open -> In review -> Submitted -> Escalated -> Won -> Closed
+pending_review → filed → carrier_responded → won
+                   ↓              ↓              ↓
+                closed        dismissed      closed
+                   ↑              ↑
+                partial ←─────────┘
+                   ↓
+               appealed → carrier_responded
 ```
 
-Defined in `lib/format.ts` as the `STAGES` array.
+All eight statuses:
+
+| Status | Description |
+|--------|-------------|
+| `pending_review` | Finding flagged, awaiting staff review before filing |
+| `filed` | Dispute submitted to carrier |
+| `carrier_responded` | Carrier has replied (accept, deny, partial, counter) |
+| `won` | Carrier accepted the dispute — recovery confirmed |
+| `dismissed` | Dispute rejected after review or carrier denial |
+| `partial` | Carrier offered partial recovery |
+| `appealed` | Staff appealed a carrier response |
+| `closed` | Terminal — no further action |
 
 ## Server Actions (`app/(console)/disputes/actions.ts`)
 

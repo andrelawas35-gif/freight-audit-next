@@ -176,7 +176,7 @@ async function fileDisputeForAudit(auditResultId: string, resolutionNotes = '') 
     'Carrier (display)': audit['Carrier (display)'] || '',
     'Tracking number':   audit['Tracking number'] || '',
     'Disputed amount':   amount,
-    'Status':            'Open',
+    'Status':            'pending_review',
     'Opened date':       new Date().toISOString().slice(0, 10),
     'Resolution notes':  resolutionNotes,
   });

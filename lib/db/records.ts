@@ -73,7 +73,6 @@ export type TableName =
   | 'gateway_behavioral_tags'
   | 'gateway_decisions'
   | 'client_insurance_policies'
-  | 'insurance_policy_rules'
   | 'policy_scope_exclusions'
   | 'ingestion_exceptions'
   | 'ingestion_batches'

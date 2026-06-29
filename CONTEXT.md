@@ -118,6 +118,12 @@ A governing arrangement between a client and a carrier, 3PL, or insurer. The sta
 
 **Do not use**: "policy" to mean a contract. "Policy" survives only at the module level (Policy Intelligence).
 
+### Attestation Authority
+`policy_rulesets` is the **sole** attestation authority. A client attests to a ruleset; the ruleset transitions `draft → client_attested → active` (staff activation). The `policy_attestations` table was designed but never created — it is superseded by the ruleset lifecycle. The columns `attested_by`, `attested_at`, and `scope_statement` live on `policy_rulesets`.
+
+### Gateway Tag Authority
+`gateway_behavioral_tags` is the **sole** authority for gateway preventability tags. The denormalized columns on `"Audit Results"` (`"Gateway preventability"`, `"Gateway category"`, `"Gateway rule suggestion"`, etc.) are a legacy cache — read from the normalized table, not written to independently. All gateway tag review (confirm/edit/dismiss) goes through `gateway_behavioral_tags`.
+
 ### Document (not "Policy Document")
 One piece of source evidence: a PDF, tariff, rider, SOP, or email. Append-only. The renewed 2026 contract is a new document row, never an edit of the 2025 one.
 
@@ -132,10 +138,13 @@ The version unit. A named, versioned collection of rules, `draft → active → 
 The module name only. Covers extraction, taxonomy, backtest, and readiness. "Policy" here means "the business domain of governing arrangements" — not the code tables that live under it.
 
 ### Gateway (Pre-Shipment)
-Not a separate service. The Gateway is a **mode** of the existing `evaluatePolicyContext()` evaluator: `mode: 'pre_shipment'` vs `mode: 'backtest'`. It runs as an API route in the Next.js app (not a separate Fastify runtime), reading the same Postgres `policy_rules` source as the backtest. The `/v1/precheck` endpoint calls the same function the backtest calls.
+The Gateway runs as a **separate Fastify service** (`services/gateway/`) importing the shared `lib/intelligence/policy-evaluator.ts` library. The evaluator is the same code (`mode: 'pre_shipment'` vs `mode: 'backtest'`); the runtime is a separate process for latency isolation, independent scaling, and different failure modes (fail-closed for high-value prechecks vs fail-open for backtests). The `/v1/precheck` endpoint calls the same evaluator function the backtest calls. See ADR 0016.
 
 ### Backtest (Post-Shipment)
 A reproducible run of one ruleset against a historical period. Read-only over shipments, invoices, and audit results. Produces `policy_backtest_results` — one row per violated rule. Used for the "Linked Audit" and the Compliance Intelligence Package.
+
+### Data Readiness
+A pre-assessment diagnostic: per-field null-rate across a client's shipments, cross-referenced with which rules depend on each field. Surfaces "data capture is finding #1" when sparse. Priced as a standalone $500 Data Maturity Audit; the full $1,000 Compliance Risk Assessment requires sufficient data completeness to produce meaningful results.
 
 ## Portal Governance Terms
 

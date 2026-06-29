@@ -14,11 +14,13 @@ import {
   getInsuranceExposureReport,
   getGatewayReadinessReport,
   getTopGatewayRuleSuggestions,
+  getClientScopeExclusions,
 } from '@/lib/intelligence/reports';
 import type {
   InsuranceExposureRow,
   GatewayReadinessRow,
   GatewayRuleSuggestionRow,
+  ScopeExclusionSummary,
 } from '@/lib/intelligence/reports';
 import type { Dispute, Invoice, Client, AuditResult } from '@/lib/types';
 
@@ -28,6 +30,7 @@ export type ComplianceData = {
   insuranceExposure: InsuranceExposureRow[];
   gatewayReadiness: GatewayReadinessRow[];
   ruleSuggestions: GatewayRuleSuggestionRow[];
+  scopeExclusions: ScopeExclusionSummary[];
 };
 
 export type RecoveryData = {
@@ -224,13 +227,14 @@ async function fetchRecoveryData(
 
 // ── Compliance data fetch ───────────────────────────────────────
 
-async function fetchComplianceData(clientId: string): Promise<ComplianceData> {
-  const [insuranceExposure, gatewayReadiness, ruleSuggestions] = await Promise.all([
-    getInsuranceExposureReport({ clientId, months: 6 }),
-    getGatewayReadinessReport({ clientId, months: 6 }),
-    getTopGatewayRuleSuggestions({ clientId, limit: 5 }),
+async function fetchComplianceData(clientId: string, db?: SqlLike): Promise<ComplianceData> {
+  const [insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions] = await Promise.all([
+    getInsuranceExposureReport({ clientId, months: 6 }, db),
+    getGatewayReadinessReport({ clientId, months: 6 }, db),
+    getTopGatewayRuleSuggestions({ clientId, limit: 5 }, db),
+    getClientScopeExclusions(clientId, db),
   ]);
-  return { insuranceExposure, gatewayReadiness, ruleSuggestions };
+  return { insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions };
 }
 
 // ── Unified data loader ─────────────────────────────────────────
@@ -256,6 +260,7 @@ export async function getPortalDashboardData(
     insuranceExposure: [],
     gatewayReadiness: [],
     ruleSuggestions: [],
+    scopeExclusions: [],
   };
   let companyName = 'Your dashboard';
 
@@ -266,7 +271,7 @@ export async function getPortalDashboardData(
   try {
     const [recoveryResult, complianceResult] = await Promise.allSettled([
       fetchRecoveryData(clientId, db),
-      fetchComplianceData(clientId),
+      fetchComplianceData(clientId, db),
     ]);
 
     if (recoveryResult.status === 'fulfilled') {

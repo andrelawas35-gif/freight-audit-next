@@ -92,13 +92,16 @@ async function doLoad(): Promise<void> {
 
   const newCache = new Map<string, CachedRuleset>();
 
-  // Load active rulesets (effective window covers today)
+  // Load active rulesets (effective window covers today), latest first.
+  // ORDER BY effective_from DESC ensures the first ruleset per client is the
+  // most recently effective one — no lexicographic version comparison needed.
   const rulesetRows = await sql`
     SELECT id, client_id, version, effective_from, effective_to
     FROM policy_rulesets
     WHERE status = 'active'
       AND (effective_from IS NULL OR effective_from <= ${now}::date)
       AND (effective_to IS NULL OR effective_to >= ${now}::date)
+    ORDER BY effective_from DESC NULLS LAST, created_at DESC
   `;
   const rulesets = rulesetRows as unknown as RulesetRow[];
 
@@ -120,12 +123,14 @@ async function doLoad(): Promise<void> {
   `;
   const rules = ruleRows as unknown as RuleRow[];
 
-  // Group rules by clientId, picking latest ruleset version per client
+  // Group rules by clientId, picking latest active ruleset per client.
+  // Rulesets are already ordered by effective_from DESC, created_at DESC by the query —
+  // the first ruleset encountered for a client is the latest effective one.
   const clientRules = new Map<string, { version: string; rules: PolicyRuleForEvaluation[] }>();
 
   for (const rs of rulesets) {
-    const existing = clientRules.get(rs.client_id);
-    if (existing && existing.version >= rs.version) continue;
+    // First ruleset wins (already ordered by effective_from DESC in the query)
+    if (clientRules.has(rs.client_id)) continue;
 
     const clientRulesList: PolicyRuleForEvaluation[] = rules
       .filter((r) => r.ruleset_id === rs.id && r.client_id === rs.client_id)
