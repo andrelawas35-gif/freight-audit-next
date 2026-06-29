@@ -4,3 +4,12 @@ node_modules/
 .env*.local
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.aider*
+
+# Synthetic ML training data (regenerable; too large for git — keep local only)
+coi_train.jsonl
+coi_val.jsonl
+coi_test.jsonl
+synthetic_images/

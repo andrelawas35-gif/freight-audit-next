@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/run-audit/process",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sftp-fetch",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

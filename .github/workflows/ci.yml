@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, release/*]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # TEST_DATABASE_URL points to a dedicated CI Neon branch.
+      # Provisioned from scratch each run via MIGRATION_RESET=true.
+      # Set this secret in GitHub repo Settings → Secrets and variables → Actions.
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - run: npm ci --legacy-peer-deps
+
+      - run: npx tsc --noEmit
+
+      # Verify the Next.js production build compiles.
+      # Catches dead imports, route conflicts, and Edge runtime violations
+      # that tsc --noEmit alone cannot detect.
+      - run: npm run build
+        env:
+          # Build skips Sentry source map uploads when auth token is missing
+          SENTRY_AUTH_TOKEN: ''
+
+      # Provision the test database from scratch.
+      # MIGRATION_RESET=true drops public schema objects and re-applies
+      # all 21 migrations idempotently.  The TEST_DATABASE_URL secret
+      # should point to a dedicated CI Neon branch (e.g. test/ci).
+      - name: Provision test database
+        if: env.TEST_DATABASE_URL
+        run: npx tsx db/migrate.ts
+        env:
+          MIGRATION_RESET: 'true'
+
+      - run: npm test
+        env:
+          CI: 'true'

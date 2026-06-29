@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "Ref": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "ref-tools-mcp@latest"],
+      "env": {
+        "REF_API_KEY": "<sign up at https://ref.tools to get an API key>"
+      }
+    }
+  }
+}

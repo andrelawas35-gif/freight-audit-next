@@ -150,7 +150,7 @@ In Next.js, split it into two parts:
 
 **Server part** — `app/queue/page.tsx`:
 ```tsx
-import { fetchRecords } from '@/lib/airtable';
+import { fetchRecords } from '@/lib/db/records';
 import { QueueView } from '@/components/queue-view';
 
 export default async function QueuePage() {
