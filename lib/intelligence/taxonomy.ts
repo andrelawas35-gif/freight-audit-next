@@ -145,111 +145,133 @@ export function validateGatewayTag(tag: GatewayTag): GatewayTag {
 export function defaultGatewayTagForRule(ruleCode: string, variance: number): GatewayTag {
   const savings = Math.max(0, variance);
 
-  switch (ruleCode) {
-    case 'DIM_WEIGHT_TRAP':
-      return validateGatewayTag({
-        gatewayPreventability: 'PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'DIM_WEIGHT_PADDING',
-        gatewayRuleSuggestion: 'Warn or block when selected package cube is excessive for item weight/profile before label purchase.',
-        gatewayEstimatedSavings: savings,
-        gatewayConfidence: 0.85,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'PHANTOM_ACCESSORIAL':
-      return validateGatewayTag({
-        gatewayPreventability: 'PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'ADDRESS_VALIDATION',
-        gatewayRuleSuggestion: 'Validate address type and waived accessorial rules before carrier/service selection.',
-        gatewayEstimatedSavings: savings,
-        gatewayConfidence: 0.8,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'SLA_FAILURE':
-    case 'LTL_SLA_FAILURE':
-      return validateGatewayTag({
-        gatewayPreventability: 'NON_PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'LATE_SHIPMENT_RISK',
-        gatewayRuleSuggestion: null,
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.65,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'TPL_GHOST_SHIPMENT':
-      return validateGatewayTag({
-        gatewayPreventability: 'PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'THREE_PL_PICK_PACK_ERROR',
-        gatewayRuleSuggestion: 'Block 3PL fulfillment billing when no matching client order or shipment exists.',
-        gatewayEstimatedSavings: savings,
-        gatewayConfidence: 0.75,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'TPL_DUPLICATE':
-      return validateGatewayTag({
-        gatewayPreventability: 'PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'DUPLICATE_ORDER_FLOW',
-        gatewayRuleSuggestion: 'Block duplicate order/fulfillment billing across invoice cycles unless manually approved.',
-        gatewayEstimatedSavings: savings,
-        gatewayConfidence: 0.8,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'TPL_DATA_REQUIRED':
-      return validateGatewayTag({
-        gatewayPreventability: 'PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: 'DATA_REQUIRED',
-        gatewayRuleSuggestion: 'Require underlying carrier invoice or base-cost evidence before approving cost-plus 3PL freight charges.',
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.7,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'TPL_PACKAGING':
-      return validateGatewayTag({
-        gatewayPreventability: 'UNKNOWN',
-        gatewayCategory: 'BOX_SIZE_MISMATCH',
-        gatewayRuleSuggestion: null,
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.45,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'TPL_PICK_FEE':
-    case 'TPL_FREIGHT_MARKUP':
-    case 'TPL_STORAGE':
-      return validateGatewayTag({
-        gatewayPreventability: 'NON_PREVENTABLE_BY_GATEWAY',
-        gatewayCategory: ruleCode === 'TPL_STORAGE' ? 'STORAGE_PROCESS_ERROR' : 'CONTRACT_RATE_ERROR',
-        gatewayRuleSuggestion: null,
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.7,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    case 'DUPLICATE_TRACKING':
-      return validateGatewayTag({
-        gatewayPreventability: 'UNKNOWN',
-        gatewayCategory: 'CARRIER_BILLING_GLITCH',
-        gatewayRuleSuggestion: null,
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.45,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
-
-    default:
-      return validateGatewayTag({
-        gatewayPreventability: 'UNKNOWN',
-        gatewayCategory: 'DATA_REQUIRED',
-        gatewayRuleSuggestion: null,
-        gatewayEstimatedSavings: 0,
-        gatewayConfidence: 0.25,
-        gatewaySignalSource: 'RULE_DEFAULT',
-      });
+  // ── Explicit rule-code → tag mapping ──────────────────────────────
+  // Every current rule code has an explicit entry. A missing key is a
+  // structural error (failed lookup), not a silent UNKNOWN fallthrough.
+  // This catches a future revenue-bearing rule shipped without a taxonomy
+  // mapping — the guard that suite 1's rule-code-registry test enforces.
+  const entry = GATEWAY_TAG_MAP[ruleCode];
+  if (!entry) {
+    throw new Error(
+      `[taxonomy] No gateway tag mapping for rule code "${ruleCode}". ` +
+      `Add an entry to GATEWAY_TAG_MAP before deploying this rule.`,
+    );
   }
+
+  const tag: GatewayTag = {
+    gatewayPreventability: entry.preventability,
+    gatewayCategory: entry.category,
+    gatewayRuleSuggestion: entry.suggestion ?? null,
+    gatewayEstimatedSavings: entry.hasSavings ? savings : 0,
+    gatewayConfidence: entry.confidence,
+    gatewaySignalSource: 'RULE_DEFAULT',
+  };
+
+  return validateGatewayTag(tag);
 }
+
+/** Per-rule-code taxonomy entry. */
+type TaxonomyEntry = {
+  preventability: GatewayPreventability;
+  category: typeof GATEWAY_CATEGORIES[number];
+  suggestion: string | null;
+  hasSavings: boolean;
+  confidence: number;
+};
+
+/**
+ * Explicit rule-code → taxonomy mapping.
+ *
+ * Adding a rule code without an entry here is a build-time / lookup error,
+ * not a silent `default` fallthrough.  The heavy-testing suite 1 rule-code-
+ * registry guard asserts every active rule code has an entry.
+ */
+const GATEWAY_TAG_MAP: Record<string, TaxonomyEntry> = {
+  DIM_WEIGHT_TRAP: {
+    preventability: 'PREVENTABLE_BY_GATEWAY',
+    category: 'DIM_WEIGHT_PADDING',
+    suggestion: 'Warn or block when selected package cube is excessive for item weight/profile before label purchase.',
+    hasSavings: true,
+    confidence: 0.85,
+  },
+  PHANTOM_ACCESSORIAL: {
+    preventability: 'PREVENTABLE_BY_GATEWAY',
+    category: 'ADDRESS_VALIDATION',
+    suggestion: 'Validate address type and waived accessorial rules before carrier/service selection.',
+    hasSavings: true,
+    confidence: 0.8,
+  },
+  SLA_FAILURE: {
+    preventability: 'NON_PREVENTABLE_BY_GATEWAY',
+    category: 'LATE_SHIPMENT_RISK',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.65,
+  },
+  LTL_SLA_FAILURE: {
+    preventability: 'NON_PREVENTABLE_BY_GATEWAY',
+    category: 'LATE_SHIPMENT_RISK',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.65,
+  },
+  TPL_GHOST_SHIPMENT: {
+    preventability: 'PREVENTABLE_BY_GATEWAY',
+    category: 'THREE_PL_PICK_PACK_ERROR',
+    suggestion: 'Block 3PL fulfillment billing when no matching client order or shipment exists.',
+    hasSavings: true,
+    confidence: 0.75,
+  },
+  TPL_DUPLICATE: {
+    preventability: 'PREVENTABLE_BY_GATEWAY',
+    category: 'DUPLICATE_ORDER_FLOW',
+    suggestion: 'Block duplicate order/fulfillment billing across invoice cycles unless manually approved.',
+    hasSavings: true,
+    confidence: 0.8,
+  },
+  TPL_DATA_REQUIRED: {
+    preventability: 'PREVENTABLE_BY_GATEWAY',
+    category: 'DATA_REQUIRED',
+    suggestion: 'Require underlying carrier invoice or base-cost evidence before approving cost-plus 3PL freight charges.',
+    hasSavings: false,
+    confidence: 0.7,
+  },
+  TPL_PACKAGING: {
+    preventability: 'UNKNOWN',
+    category: 'BOX_SIZE_MISMATCH',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.45,
+  },
+  TPL_PICK_FEE: {
+    preventability: 'NON_PREVENTABLE_BY_GATEWAY',
+    category: 'CONTRACT_RATE_ERROR',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.7,
+  },
+  TPL_FREIGHT_MARKUP: {
+    preventability: 'NON_PREVENTABLE_BY_GATEWAY',
+    category: 'CONTRACT_RATE_ERROR',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.7,
+  },
+  TPL_STORAGE: {
+    preventability: 'NON_PREVENTABLE_BY_GATEWAY',
+    category: 'STORAGE_PROCESS_ERROR',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.7,
+  },
+  DUPLICATE_TRACKING: {
+    preventability: 'UNKNOWN',
+    category: 'CARRIER_BILLING_GLITCH',
+    suggestion: null,
+    hasSavings: false,
+    confidence: 0.45,
+  },
+};
 
 export function gatewayTagToFields(tag: GatewayTag): Record<string, unknown> {
   const validated = validateGatewayTag(tag);

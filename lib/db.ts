@@ -60,20 +60,29 @@ let _tenantPool: Pool | null = null;
  *
  * For staff/aggregate/BI work that reads across tenants, use getSql()
  * (HTTP driver, table owner role, RLS bypassed).
+ *
+ * Pool configuration:
+ *   TENANT_DATABASE_URL — optional pooled-endpoint override (defaults to DATABASE_URL).
+ *     Set to the Neon -pooler host when adopting session-mode pooling.
+ *   TENANT_POOL_MAX — max connections per instance (default 10, matches neon Pool default).
  */
 export async function getTenantSql(clientId: string) {
   if (!_tenantPool) {
-    const url = process.env.DATABASE_URL;
+    const url = process.env.TENANT_DATABASE_URL || process.env.DATABASE_URL;
     if (!url) throw new Error('Missing DATABASE_URL in .env.local');
-    _tenantPool = new Pool({ connectionString: url });
+    const max = parseInt(process.env.TENANT_POOL_MAX || '10', 10);
+    _tenantPool = new Pool({ connectionString: url, max });
   }
   const client = await _tenantPool.connect();
   // Reset role and tenant first — pooled connections reuse sessions
   // and a previous checkout may have left stale SET ROLE or SET app.current_tenant.
-  await client.query('RESET ROLE');
-  await client.query('RESET app.current_tenant');
-  await client.query('SET ROLE app_tenant');
-  await client.query('SET app.current_tenant = $1', [clientId]);
+  // Batched into a single multi-statement query (was 4 round-trips; now 1).
+  await client.query(`
+    RESET ROLE;
+    RESET app.current_tenant;
+    SET ROLE app_tenant;
+    SET app.current_tenant = $1;
+  `, [clientId]);
   return client;
 }
 
