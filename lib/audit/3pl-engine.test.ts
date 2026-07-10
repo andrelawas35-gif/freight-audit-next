@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { query, recordRun, batchCreateMock } = vi.hoisted(() => ({
+const { query, transaction, recordRun } = vi.hoisted(() => ({
   query: vi.fn(),
+  transaction: vi.fn(),
   recordRun: vi.fn(),
-  batchCreateMock: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@/lib/db', () => ({
-  getSql: () => ({ query }),
+  getSql: () => ({ query, transaction }),
 }));
-vi.mock('@/lib/db/records', () => ({ batchCreate: batchCreateMock }));
 vi.mock('./rulebook', () => ({
   loadRulebook: vi.fn().mockResolvedValue([]),
   createResolver: vi.fn().mockReturnValue({}),
@@ -27,12 +26,8 @@ function makeFulfillmentQuery(firstPage: unknown[], secondPage: unknown[]) {
   return (sqlText: string, params: unknown[]) => {
     const s = String(sqlText);
 
-    // Transaction control
-    if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return Promise.resolve([]);
-
     // Fulfillment page queries
     if (s.includes('FROM tpl_fulfillment_lines') && s.includes('ORDER BY id ASC')) {
-      // First page has fewer params (no cursor), second page has cursor param
       const hasCursor = s.includes('id >');
       return Promise.resolve(hasCursor ? secondPage : firstPage);
     }
@@ -54,9 +49,13 @@ function makeFulfillmentQuery(firstPage: unknown[], secondPage: unknown[]) {
 
 describe('3PL audit pagination', () => {
   beforeEach(() => {
-    query.mockReset();
+    query.mockReset().mockResolvedValue([]);
+    // transaction mock: runs the callback, executes each query in the array
+    transaction.mockReset().mockImplementation(
+      (cb: (txn: { query: typeof query }) => unknown[]) =>
+        Promise.resolve((cb({ query }) as unknown[]).map(() => [] as Record<string, unknown>[]))
+    );
     recordRun.mockReset().mockResolvedValue(undefined);
-    batchCreateMock.mockReset().mockResolvedValue([]);
   });
 
   it('processes pending fulfillment lines beyond the 500-row boundary', async () => {
@@ -88,7 +87,7 @@ describe('3PL audit pagination', () => {
     expect(recordRun).toHaveBeenCalledWith(expect.objectContaining({ invoicesChecked: 501 }));
   });
 
-  it('wraps findings + mark-audited in a transaction per page', async () => {
+  it('wraps findings + mark-audited in sql.transaction() per page', async () => {
     const page = [{
       id: 'line-1',
       client_id: 'client-1',
@@ -100,12 +99,13 @@ describe('3PL audit pagination', () => {
 
     await runThreePLAudit({});
 
-    const txCalls = query.mock.calls
-      .map(([sql]) => String(sql))
-      .filter((s) => s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK');
-    expect(txCalls).toContain('BEGIN');
-    expect(txCalls).toContain('COMMIT');
-    expect(txCalls).not.toContain('ROLLBACK');
+    // Transaction should have been called (not raw BEGIN/COMMIT)
+    expect(transaction).toHaveBeenCalled();
+    // No raw BEGIN/COMMIT should reach query
+    const sqlCalls = query.mock.calls.map(([sql]) => String(sql));
+    expect(sqlCalls).not.toContain('BEGIN');
+    expect(sqlCalls).not.toContain('COMMIT');
+    expect(sqlCalls).not.toContain('ROLLBACK');
   });
 
   it('handles empty tables gracefully', async () => {

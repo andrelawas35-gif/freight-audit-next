@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── mock wiring ──────────────────────────────────────────────
-const { query } = vi.hoisted(() => ({
+const { query, transaction } = vi.hoisted(() => ({
   query: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
-  getSql: () => ({ query }),
+  getSql: () => ({ query, transaction }),
 }));
 
 const {
@@ -14,13 +15,11 @@ const {
   fetchRecordsByIdsMock,
   fetchRecordsByLinkedIdsMock,
   updateRecordMock,
-  batchCreateMock,
 } = vi.hoisted(() => ({
   fetchAllRecordsMock: vi.fn(),
   fetchRecordsByIdsMock: vi.fn(),
   fetchRecordsByLinkedIdsMock: vi.fn(),
   updateRecordMock: vi.fn(),
-  batchCreateMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db/records', () => ({
@@ -28,7 +27,6 @@ vi.mock('@/lib/db/records', () => ({
   fetchRecordsByIds: fetchRecordsByIdsMock,
   fetchRecordsByLinkedIds: fetchRecordsByLinkedIdsMock,
   updateRecord: updateRecordMock,
-  batchCreate: batchCreateMock,
 }));
 
 vi.mock('../rulebook', () => ({
@@ -81,11 +79,14 @@ function makeShipment(overrides: Partial<Shipment> = {}): Shipment {
 beforeEach(() => {
   vi.clearAllMocks();
   query.mockResolvedValue([]);
+  // transaction mock: resolves to an array of empty arrays (one per query in the tx)
+  transaction.mockImplementation((cb: (txn: { query: typeof query }) => unknown[]) =>
+    Promise.resolve((cb({ query }) as unknown[]).map(() => [] as Record<string, unknown>[]))
+  );
   fetchAllRecordsMock.mockResolvedValue([]);
   fetchRecordsByIdsMock.mockResolvedValue([]);
   fetchRecordsByLinkedIdsMock.mockResolvedValue([]);
   updateRecordMock.mockResolvedValue({});
-  batchCreateMock.mockResolvedValue([]);
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -127,7 +128,7 @@ describe('runAudit — orchestration', () => {
 
     expect(result.invoicesChecked).toBe(1);
     expect(result.findingsCreated).toBe(0);
-    expect(batchCreateMock).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -160,8 +161,7 @@ describe('runAudit — finding generation', () => {
 
     await runAudit({ dryRun: true });
 
-    expect(batchCreateMock).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalledWith('BEGIN');
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -169,7 +169,7 @@ describe('runAudit — finding generation', () => {
 // TRANSACTION SAFETY
 // ═══════════════════════════════════════════════════════════════
 describe('runAudit — transaction safety', () => {
-  it('wraps writes in BEGIN/COMMIT', async () => {
+  it('wraps writes in sql.transaction()', async () => {
     const invoice = makeInvoice({ 'Amount billed': 50 });
     const shipment = makeShipment({ 'Address classification': 'Commercial' });
 
@@ -179,24 +179,28 @@ describe('runAudit — transaction safety', () => {
 
     await runAudit({});
 
+    // Transaction should have been called (not raw BEGIN/COMMIT)
+    expect(transaction).toHaveBeenCalled();
+    // No raw BEGIN/COMMIT should be issued
     const sqlCalls = query.mock.calls.map(([sql]) => sql);
-    expect(sqlCalls).toContain('BEGIN');
-    expect(sqlCalls).toContain('COMMIT');
+    expect(sqlCalls).not.toContain('BEGIN');
+    expect(sqlCalls).not.toContain('COMMIT');
   });
 
-  it('rolls back on batchCreate failure', async () => {
+  it('throws if transaction fails (atomic rollback)', async () => {
     const invoice = makeInvoice({ 'Amount billed': 50 });
     const shipment = makeShipment({ 'Address classification': 'Commercial' });
 
     fetchAllRecordsMock.mockResolvedValue([invoice]);
     fetchRecordsByIdsMock.mockResolvedValue([shipment]);
     fetchRecordsByLinkedIdsMock.mockResolvedValue([]);
-    batchCreateMock.mockRejectedValue(new Error('DB write failed'));
+    transaction.mockRejectedValue(new Error('DB write failed'));
 
     await expect(runAudit({})).rejects.toThrow('DB write failed');
 
+    // No raw ROLLBACK needed — sql.transaction() handles it internally
     const sqlCalls = query.mock.calls.map(([sql]) => sql);
-    expect(sqlCalls).toContain('ROLLBACK');
+    expect(sqlCalls).not.toContain('ROLLBACK');
   });
 });
 

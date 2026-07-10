@@ -7,7 +7,6 @@
 */
 
 import { getSql } from '@/lib/db';
-import { batchCreate } from '@/lib/db/records';
 import { loadRulebook, createResolver } from './rulebook';
 import { recordRun } from './runs';
 import { log } from '@/lib/logger';
@@ -69,14 +68,13 @@ export async function runThreePLAudit(opts: {
     // Findings + mark-audited must be atomic — a crash between them would
     // leave lines marked pending with findings already written (double-audit)
     // or findings missing with lines marked audited (lost findings).
-    // Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
-    // Verified working on pinned @neondatabase/serverless version.
-    // TODO: migrate to sql.transaction() when batchCreate is refactored.
-    await sql.query('BEGIN');
-    try {
+    // Uses sql.transaction() (Neon documented API, CLAUDE.md invariant #3).
+    await sql.transaction((txn) => {
+      const queries: ReturnType<typeof txn.query>[] = [];
+
       if (findings.length) {
         const auditedAt = new Date().toISOString();
-        await batchCreate('Audit Results', findings.map((finding) => {
+        const records = findings.map((finding) => {
           const gateway = defaultGatewayTagForRule(finding.ruleCode, finding.variance);
           return {
             'Outcome': 'FLAGGED',
@@ -91,20 +89,30 @@ export async function runThreePLAudit(opts: {
             'Invoice number': finding.orderId ?? undefined,
             ...gatewayTagToFields(gateway),
           };
-        }), { inTransaction: true });
+        });
+
+        // Build INSERT queries for each finding (replaces batchCreate inline)
+        for (const fields of records) {
+          const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+          const cols = entries.map(([k]) => `"${k}"`).join(', ');
+          const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
+          const values = entries.map(([, v]) => v);
+          queries.push(txn.query(
+            `INSERT INTO "Audit Results" (${cols}) VALUES (${placeholders}) RETURNING *`,
+            values
+          ));
+        }
       }
 
       if (lineIds.length) {
-        await sql.query(
+        queries.push(txn.query(
           `UPDATE ${table} SET audit_status='audited' WHERE id = ANY($1::text[])`,
           [lineIds]
-        );
+        ));
       }
-      await sql.query('COMMIT');
-    } catch (err) {
-      await sql.query('ROLLBACK');
-      throw err;
-    }
+
+      return queries;
+    });
 
     linesChecked += lineIds.length;
     findingsCreated += findings.length;

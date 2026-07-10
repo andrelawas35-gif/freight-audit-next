@@ -1,10 +1,10 @@
 # Migration Number Registry
 
 > **Owner**: Controller (C0) — formerly E1
-> **Updated**: 2026-06-27
+> **Updated**: 2026-07-10
 > 
 > This registry is the single source of truth for migration number allocation.
-> All migration-writing tracks (E3, E4, E5) MUST claim numbers here before writing SQL.
+> All migration-writing tracks MUST claim numbers here before writing SQL.
 
 | Number | Owner | Status | Description |
 |--------|-------|--------|-------------|
@@ -14,7 +14,7 @@
 | 0003 | — | applied | SFTP fetch tracking (sftp_processed_files) |
 | 0004 | — | applied | Gateway insurance intelligence tables |
 | 0005 | — | applied | Policy intelligence MVP (policy tables) |
-| 0006 | C0 | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS — conditional on business tables) |
+| 0006 | C0 | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS) |
 | 0007 | — | applied | Backtest correctness (dollar storage, result tracking) |
 | 0008 | — | applied | Soft delete columns (deleted_at on key tables) |
 | 0009 | — | applied | Audit trail (upload_logs, change tracking) |
@@ -29,10 +29,12 @@
 | 0018 | E3 | applied | RLS rollout portal read-set + business table policies + GRANT (ADR 0013) |
 | 0019 | E5 | applied | staff_reviewed column (ADR 0015) |
 | 0020 | E5 | applied | clause_hash index (btree→hash dedup) |
-| 0021 | E5 | reserved | T3 batch index / pipeline schema |
-| **0022** | **E4** | **available** | **Next FK / schema integrity migration** |
-| **0023** | **E5** | **available** | **Next pipeline fix migration** |
-| **0024** | **E6** | **available** | **CI / stack hardening (if migration needed)** |
+| 0021 | E2 | applied | gateway_active flag on policy_rulesets |
+| 0022 | E3 | applied | T4 status vocabulary (flagged_at, flagged_by on policy_scope_exclusions) |
+| 0023 | E5 | applied | Converge insurance_policy_rules → policy_rules |
+| 0024 | — | applied | Vision extraction columns |
+| 0025 | — | applied | Golden examples for few-shot extraction |
+| **0026** | **—** | **available** | **Next available** |
 
 ## Allocation Protocol
 
@@ -48,4 +50,4 @@
 db/migrations/NNNN_descriptive_snake_name.sql
 ```
 
-Example: `db/migrations/0019_staff_reviewed_column.sql`
+Example: `db/migrations/0026_your_migration_name.sql`

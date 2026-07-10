@@ -443,9 +443,12 @@ export async function updateRecord(
 }
 
 // ── batch create (transactional) ─────────────────────────────
-// Wraps all inserts in a single transaction — if any insert fails, the
-// entire batch rolls back. Prevents orphaned partial-write states.
-// Pass { inTransaction: true } when the caller already holds a BEGIN.
+// Wraps all inserts in sql.transaction() (Neon's documented API,
+// CLAUDE.md invariant #3). If any insert fails, the entire batch
+// rolls back. Prevents orphaned partial-write states.
+// Pass { inTransaction: true } when the caller already wraps the
+// batch in a sql.transaction() — each INSERT runs directly within
+// the caller's atomic scope.
 export async function batchCreate(
   tableName: TableName,
   recordsData: Record<string, unknown>[],
@@ -454,33 +457,52 @@ export async function batchCreate(
   if (recordsData.length === 0) return [];
 
   const sql = getSql();
-  const results: Row[] = [];
   const ownTx = !opts?.inTransaction;
 
-  if (ownTx) await sql.query('BEGIN');
-  try {
-    for (const fields of recordsData) {
-      const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-      if (entries.length === 0) {
-        const rows = (await sql.query(
-          `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES RETURNING *`, []
-        )) as Row[];
-        results.push(rows[0]);
-      } else {
+  if (ownTx) {
+    // Build all INSERT queries, then execute atomically via sql.transaction().
+    // This replaces the deprecated raw BEGIN/COMMIT pattern (CLAUDE.md invariant #3).
+    const results = await sql.transaction((txn) =>
+      recordsData.map((fields) => {
+        const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+        if (entries.length === 0) {
+          return txn.query(
+            `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES RETURNING *`, []
+          );
+        }
         const cols = entries.map(([k]) => quoteIdent(k)).join(', ');
         const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
         const values = entries.map(([, v]) => v);
-        const rows = (await sql.query(
+        return txn.query(
           `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${placeholders}) RETURNING *`,
           values
-        )) as Row[];
-        results.push(rows[0]);
-      }
+        );
+      })
+    );
+    // results is an array of query results (one per INSERT); flatten to Row[]
+    return (results as Row[][]).map((r) => r[0]);
+  }
+
+  // inTransaction: true — caller wraps this batch in its own sql.transaction().
+  // Each INSERT runs directly; the caller's transaction scope ensures atomicity.
+  const results: Row[] = [];
+  for (const fields of recordsData) {
+    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) {
+      const rows = (await sql.query(
+        `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES RETURNING *`, []
+      )) as Row[];
+      results.push(rows[0]);
+    } else {
+      const cols = entries.map(([k]) => quoteIdent(k)).join(', ');
+      const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
+      const values = entries.map(([, v]) => v);
+      const rows = (await sql.query(
+        `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${placeholders}) RETURNING *`,
+        values
+      )) as Row[];
+      results.push(rows[0]);
     }
-    if (ownTx) await sql.query('COMMIT');
-  } catch (err) {
-    if (ownTx) await sql.query('ROLLBACK');
-    throw err;
   }
 
   return results;

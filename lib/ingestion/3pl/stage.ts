@@ -37,14 +37,15 @@ export async function stageFulfillment(input: {
   let matched = 0;
   let unmatched = 0;
 
-  await sql.query('BEGIN');
-  try {
-    for (const l of input.lines) {
+  // Build all INSERT queries atomically via sql.transaction()
+  // (Neon documented API, CLAUDE.md invariant #3).
+  await sql.transaction((txn) =>
+    input.lines.map((l) => {
       const shipmentId = l.trackingNumber ? byTracking.get(l.trackingNumber.toUpperCase()) ?? null : null;
       const status = shipmentId ? 'matched' : 'unmatched';
       if (shipmentId) matched++; else unmatched++;
 
-      await sql.query(
+      return txn.query(
         `INSERT INTO tpl_fulfillment_lines
            (client_id, carrier_scac, invoice_cycle, order_id, wms_shipment_id, tracking_number,
             units_picked, base_pick_fee, additional_pick_fee, packaging_fee, billed_dims, billed_weight,
@@ -58,12 +59,8 @@ export async function stageFulfillment(input: {
           status, shipmentId, JSON.stringify(l.raw),
         ]
       );
-    }
-    await sql.query('COMMIT');
-  } catch (err) {
-    await sql.query('ROLLBACK');
-    throw err;
-  }
+    })
+  );
   return { staged: input.lines.length, matched, unmatched };
 }
 
@@ -73,21 +70,19 @@ export async function stageStorage(input: {
   lines: StorageLine[];
 }): Promise<{ staged: number }> {
   const sql = getSql();
-  await sql.query('BEGIN');
-  try {
-    for (const l of input.lines) {
-      await sql.query(
+
+  // Build all INSERT queries atomically via sql.transaction()
+  // (Neon documented API, CLAUDE.md invariant #3).
+  await sql.transaction((txn) =>
+    input.lines.map((l) =>
+      txn.query(
         `INSERT INTO tpl_storage_lines
            (client_id, invoice_cycle, sku, storage_type, qty_on_hand, cubic_volume, location_id, billed_amount, raw)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [input.clientId, input.cycle, l.sku, l.storageType, l.qtyOnHand, l.cubicVolume, l.locationId, l.billedAmount, JSON.stringify(l.raw)]
-      );
-    }
-    await sql.query('COMMIT');
-  } catch (err) {
-    await sql.query('ROLLBACK');
-    throw err;
-  }
+      )
+    )
+  );
   return { staged: input.lines.length };
 }
 

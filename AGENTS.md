@@ -10,7 +10,7 @@ Client portal supports self-serve uploads and status. Staff console supports ing
 
 ## Stack
 
-Next.js 15 (App Router, Server Components + Server Actions) | React 19 | Neon Serverless Postgres | Auth.js v5 (JWT, email+password) | Claude AI (dispute parsing + data clerk) | Recharts | Vercel (serverless + edge middleware)
+Next.js 15 (App Router, Server Components + Server Actions) | React 19 | Neon Serverless Postgres | Auth.js v5 (JWT, email+password) | Codex AI (dispute parsing + data clerk) | Recharts | Vercel (serverless + edge middleware)
 
 ## Architecture
 
@@ -93,6 +93,5 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 | [`docs/LAUNCH-BLOCKERS.md`](docs/LAUNCH-BLOCKERS.md) | Open launch blockers only |
 | [`docs/LAUNCH-HARDENING-PLAN.md`](docs/LAUNCH-HARDENING-PLAN.md) | Build Plan v2 — multi-agent execution roster (Controller + 6 engineers) for the launch-hardening backlog (ADRs 0013–0016); start here for who-does-what and wave sequencing |
 | [`docs/observability.md`](docs/observability.md) | Sentry, structured logging, health checks, correlation IDs |
-| [`docs/phone-and-cloud-development.md`](docs/phone-and-cloud-development.md) | Delegating cloud tasks, Codespaces, CI, and Vercel previews from a phone/laptop-offline workflow |
 | [`docs/BACKLOG.md`](docs/BACKLOG.md) | Open post-launch and product buildout work only |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Completed/historical changes only; not an open task list |

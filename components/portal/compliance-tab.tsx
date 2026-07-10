@@ -6,6 +6,7 @@ import { CoverageGapFeed } from './coverage-gap-feed';
 import { WarehouseScorecard } from './warehouse-scorecard';
 import { GatewayReadinessPanel } from './gateway-readiness-panel';
 import { AttestationPanel } from './attestation-panel';
+import { DataReadinessPanel } from './data-readiness-panel';
 
 export function ComplianceTabShell({
   complianceData,
@@ -39,6 +40,9 @@ export function ComplianceTabShell({
         gatewayReadiness={complianceData.gatewayReadiness}
         ruleSuggestions={complianceData.ruleSuggestions}
       />
+
+      {/* Data Maturity / Readiness */}
+      <DataReadinessPanel dataReadiness={complianceData.dataReadiness} />
 
       {/* Attestation */}
       <AttestationPanel clientId={clientId} />

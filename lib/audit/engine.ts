@@ -12,7 +12,6 @@ import {
   fetchRecordsByIds,
   fetchRecordsByLinkedIds,
   updateRecord,
-  batchCreate,
 } from '@/lib/db/records';
 import type { Invoice, Shipment } from '@/lib/types';
 import type { Finding } from './types';
@@ -112,42 +111,58 @@ export async function runAudit(options: {
   }
 
   // 6. Write findings + update client timestamp atomically.
-  //    Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
-  //    Verified working on pinned @neondatabase/serverless version (session pinning
-  //    across queries). batchCreate({ inTransaction: true }) skips its own BEGIN.
-  //    TODO: migrate to sql.transaction() when batchCreate is refactored to
-  //    build synchronous query arrays (Wave 2 follow-up, BACKLOG §E4).
+  //    Uses sql.transaction() (Neon documented API, CLAUDE.md invariant #3).
+  //    All INSERTs + UPDATE are bundled into a single atomic transaction.
   if (!dryRun && findings.length > 0) {
     const sql = getSql();
-    await sql.query('BEGIN');
-    try {
-      const auditedAt = new Date().toISOString();
-      const records = findings.map((f) => {
-        const gateway = f.gateway ?? defaultGatewayTagForRule(f.ruleCode, f.variance);
-        return {
-          'Invoice': [f.invoiceId],
-          'Outcome': f.outcome,
-          'Billed amount': f.billedAmount,
-          'Expected amount': f.expectedAmount,
-          'Variance': f.variance,
-          'Notes': f.notes,
-          'Audited at': auditedAt,
-          'Detected by': f.ruleCode,
-          ...gatewayTagToFields(gateway),
-        };
-      });
-      await batchCreate('Audit Results', records, { inTransaction: true });
+    const auditedAt = new Date().toISOString();
 
-      if (clientId) {
-        await updateRecord('Clients', clientId, {
-          'Last audit run': new Date().toISOString(),
-        });
+    const records = findings.map((f) => {
+      const gateway = f.gateway ?? defaultGatewayTagForRule(f.ruleCode, f.variance);
+      return {
+        'Invoice': [f.invoiceId],
+        'Outcome': f.outcome,
+        'Billed amount': f.billedAmount,
+        'Expected amount': f.expectedAmount,
+        'Variance': f.variance,
+        'Notes': f.notes,
+        'Audited at': auditedAt,
+        'Detected by': f.ruleCode,
+        ...gatewayTagToFields(gateway),
+      };
+    });
+
+    await sql.transaction((txn) => {
+      const queries: ReturnType<typeof txn.query>[] = [];
+
+      // Build INSERT queries for each finding (replaces batchCreate inline)
+      for (const fields of records) {
+        const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+        if (entries.length === 0) {
+          queries.push(txn.query(
+            `INSERT INTO "Audit Results" DEFAULT VALUES RETURNING *`, []
+          ));
+        } else {
+          const cols = entries.map(([k]) => `"${k}"`).join(', ');
+          const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
+          const values = entries.map(([, v]) => v);
+          queries.push(txn.query(
+            `INSERT INTO "Audit Results" (${cols}) VALUES (${placeholders}) RETURNING *`,
+            values
+          ));
+        }
       }
-      await sql.query('COMMIT');
-    } catch (err) {
-      await sql.query('ROLLBACK');
-      throw err;
-    }
+
+      // Update client's last-audit timestamp within the same transaction
+      if (clientId) {
+        queries.push(txn.query(
+          `UPDATE "Clients" SET "Last audit run" = $1 WHERE id = $2`,
+          [auditedAt, clientId]
+        ));
+      }
+
+      return queries;
+    });
   } else if (!dryRun && clientId) {
     await updateRecord('Clients', clientId, {
       'Last audit run': new Date().toISOString(),

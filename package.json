@@ -2,6 +2,7 @@
   "name": "freight-audit-console",
   "version": "0.1.0",
   "private": true,
+  "workspaces": ["services/*"],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
