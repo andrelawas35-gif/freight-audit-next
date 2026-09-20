@@ -17,7 +17,7 @@ INSERT INTO policy_rules (
 )
 SELECT
   id, client_id, NULL as ruleset_id, policy_id, NULL as document_id,
-  rule_key, category, condition_json, action_json, severity,
+  rule_key, 'INSURANCE' as category, condition_json, action_json, severity,
   clause_ref, 'active' as status,
   effective_from as created_at, effective_to as updated_at
 FROM insurance_policy_rules
