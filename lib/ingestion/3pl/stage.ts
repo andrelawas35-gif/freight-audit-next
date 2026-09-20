@@ -37,32 +37,34 @@ export async function stageFulfillment(input: {
   let matched = 0;
   let unmatched = 0;
 
-  await sql.query('BEGIN');
-  try {
-    for (const l of input.lines) {
-      const shipmentId = l.trackingNumber ? byTracking.get(l.trackingNumber.toUpperCase()) ?? null : null;
-      const status = shipmentId ? 'matched' : 'unmatched';
-      if (shipmentId) matched++; else unmatched++;
+  // All lines land in one atomic sql.transaction() (ADR 0017). Raw BEGIN/COMMIT
+  // is never atomic on the Neon HTTP driver: each statement is its own request.
+  const inserts = input.lines.map((l) => {
+    const shipmentId = l.trackingNumber ? byTracking.get(l.trackingNumber.toUpperCase()) ?? null : null;
+    const status = shipmentId ? 'matched' : 'unmatched';
+    if (shipmentId) matched++; else unmatched++;
+    return { l, shipmentId, status };
+  });
 
-      await sql.query(
-        `INSERT INTO tpl_fulfillment_lines
-           (client_id, carrier_scac, invoice_cycle, order_id, wms_shipment_id, tracking_number,
-            units_picked, base_pick_fee, additional_pick_fee, packaging_fee, billed_dims, billed_weight,
-            base_freight, fuel_surcharge, total_billed, carrier_pro, base_carrier_cost,
-            match_status, matched_shipment_id, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-        [
-          input.clientId, input.carrierScac, input.cycle, l.orderId, l.wmsShipmentId, l.trackingNumber,
-          l.unitsPicked, l.basePickFee, l.additionalPickFee, l.packagingFee, l.billedDims, l.billedWeight,
-          l.baseFreight, l.fuelSurcharge, l.totalBilled, l.carrierPro, l.baseCarrierCost,
-          status, shipmentId, JSON.stringify(l.raw),
-        ]
-      );
-    }
-    await sql.query('COMMIT');
-  } catch (err) {
-    await sql.query('ROLLBACK');
-    throw err;
+  if (inserts.length > 0) {
+    await sql.transaction((txn) =>
+      inserts.map(({ l, shipmentId, status }) =>
+        txn.query(
+          `INSERT INTO tpl_fulfillment_lines
+             (client_id, carrier_scac, invoice_cycle, order_id, wms_shipment_id, tracking_number,
+              units_picked, base_pick_fee, additional_pick_fee, packaging_fee, billed_dims, billed_weight,
+              base_freight, fuel_surcharge, total_billed, carrier_pro, base_carrier_cost,
+              match_status, matched_shipment_id, raw)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          [
+            input.clientId, input.carrierScac, input.cycle, l.orderId, l.wmsShipmentId, l.trackingNumber,
+            l.unitsPicked, l.basePickFee, l.additionalPickFee, l.packagingFee, l.billedDims, l.billedWeight,
+            l.baseFreight, l.fuelSurcharge, l.totalBilled, l.carrierPro, l.baseCarrierCost,
+            status, shipmentId, JSON.stringify(l.raw),
+          ]
+        )
+      )
+    );
   }
   return { staged: input.lines.length, matched, unmatched };
 }
@@ -73,20 +75,18 @@ export async function stageStorage(input: {
   lines: StorageLine[];
 }): Promise<{ staged: number }> {
   const sql = getSql();
-  await sql.query('BEGIN');
-  try {
-    for (const l of input.lines) {
-      await sql.query(
-        `INSERT INTO tpl_storage_lines
-           (client_id, invoice_cycle, sku, storage_type, qty_on_hand, cubic_volume, location_id, billed_amount, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [input.clientId, input.cycle, l.sku, l.storageType, l.qtyOnHand, l.cubicVolume, l.locationId, l.billedAmount, JSON.stringify(l.raw)]
-      );
-    }
-    await sql.query('COMMIT');
-  } catch (err) {
-    await sql.query('ROLLBACK');
-    throw err;
+  // One atomic sql.transaction() (ADR 0017); see stageFulfillment.
+  if (input.lines.length > 0) {
+    await sql.transaction((txn) =>
+      input.lines.map((l) =>
+        txn.query(
+          `INSERT INTO tpl_storage_lines
+             (client_id, invoice_cycle, sku, storage_type, qty_on_hand, cubic_volume, location_id, billed_amount, raw)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [input.clientId, input.cycle, l.sku, l.storageType, l.qtyOnHand, l.cubicVolume, l.locationId, l.billedAmount, JSON.stringify(l.raw)]
+        )
+      )
+    );
   }
   return { staged: input.lines.length };
 }

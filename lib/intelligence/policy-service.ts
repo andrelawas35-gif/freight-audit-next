@@ -729,68 +729,67 @@ export async function runPolicyBacktest(input: {
 
   const effectiveRulesetId = input.rulesetId || findDominantRuleset(shipmentRulesetMap);
 
-  // ── 5. Write run and results in a transaction ─────────────────
-  await sql.query('BEGIN');
-  let runId = '';
+  // ── 5. Write run and results atomically (ADR 0017) ────────────
+  // sql.transaction() is the only atomicity mechanism on the Neon HTTP driver
+  // (raw BEGIN/COMMIT lands on different connections and is never atomic), and
+  // it needs every statement up front. So the run id is generated here, with
+  // the same shape as the column default ('pbt' + uuid without dashes), instead
+  // of being read back from RETURNING.
+  const runId = `pbt${crypto.randomUUID().replace(/-/g, '')}`;
   try {
-    const [run] = await sql.query(
-      `INSERT INTO policy_backtest_runs (
-         client_id, ruleset_id, period_start, period_end, status, mode, input_snapshot,
-         data_required_count
-       ) VALUES ($1,$2,$3,$4,'running',$5,$6::jsonb,$7)
-       RETURNING id`,
-      [
-        input.clientId,
-        effectiveRulesetId,
-        input.periodStart,
-        input.periodEnd,
-        mode,
-        JSON.stringify(contexts.map(stripContextForSnapshot)),
-        dataRequiredCount,
-      ]
-    ) as { id: string }[];
-    runId = run.id;
-
-    // Stamp runId on all result rows and insert
-    for (const row of resultRows) {
-      row.backtestRunId = runId;
-      await sql.query(
-        `INSERT INTO policy_backtest_results (
-           backtest_run_id, client_id, rule_id, shipment_id, invoice_id, audit_result_id,
-           decision, category, message, suggested_fix, clause_ref, preventable_loss,
-           uninsured_exposure
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    await sql.transaction((txn) => [
+      txn.query(
+        `INSERT INTO policy_backtest_runs (
+           id, client_id, ruleset_id, period_start, period_end, status, mode, input_snapshot,
+           data_required_count
+         ) VALUES ($1,$2,$3,$4,$5,'running',$6,$7::jsonb,$8)`,
         [
-          row.backtestRunId,
-          row.clientId,
-          row.ruleId,
-          row.shipmentId,
-          row.invoiceId,
-          row.auditResultId,
-          row.decision,
-          row.category,
-          row.message,
-          row.suggestedFix,
-          row.clauseRef,
-          row.preventableLoss,
-          row.uninsuredExposure,
+          runId,
+          input.clientId,
+          effectiveRulesetId,
+          input.periodStart,
+          input.periodEnd,
+          mode,
+          JSON.stringify(contexts.map(stripContextForSnapshot)),
+          dataRequiredCount,
         ]
-      );
-    }
-
-    await sql.query(
-      `UPDATE policy_backtest_runs
-       SET status = 'completed',
-           shipments_checked = $2,
-           violations_found = $3,
-           preventable_margin_loss = $4,
-           uninsured_exposure = $5,
-           completed_at = now()
-       WHERE id = $1`,
-      [runId, contexts.length, resultRows.length, totals.preventableLoss, totals.uninsuredExposure]
-    );
-
-    await sql.query('COMMIT');
+      ),
+      ...resultRows.map((row) =>
+        txn.query(
+          `INSERT INTO policy_backtest_results (
+             backtest_run_id, client_id, rule_id, shipment_id, invoice_id, audit_result_id,
+             decision, category, message, suggested_fix, clause_ref, preventable_loss,
+             uninsured_exposure
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            runId,
+            row.clientId,
+            row.ruleId,
+            row.shipmentId,
+            row.invoiceId,
+            row.auditResultId,
+            row.decision,
+            row.category,
+            row.message,
+            row.suggestedFix,
+            row.clauseRef,
+            row.preventableLoss,
+            row.uninsuredExposure,
+          ]
+        )
+      ),
+      txn.query(
+        `UPDATE policy_backtest_runs
+         SET status = 'completed',
+             shipments_checked = $2,
+             violations_found = $3,
+             preventable_margin_loss = $4,
+             uninsured_exposure = $5,
+             completed_at = now()
+         WHERE id = $1`,
+        [runId, contexts.length, resultRows.length, totals.preventableLoss, totals.uninsuredExposure]
+      ),
+    ]);
     return {
       runId,
       shipmentsChecked: contexts.length,
@@ -798,14 +797,28 @@ export async function runPolicyBacktest(input: {
       dataRequired: dataRequiredCount,
     };
   } catch (err) {
-    await sql.query('ROLLBACK');
-    if (runId) {
+    // The transaction rolled back, so no run row exists. Record the failure in
+    // a separate statement so a failed attempt stays visible in the run list.
+    // A failure here must not mask the original error.
+    try {
       await sql.query(
-        `UPDATE policy_backtest_runs
-         SET status = 'failed', error = $2, completed_at = now()
-         WHERE id = $1`,
-        [runId, err instanceof Error ? err.message : String(err)]
+        `INSERT INTO policy_backtest_runs (
+           id, client_id, ruleset_id, period_start, period_end, status, mode,
+           data_required_count, error, completed_at
+         ) VALUES ($1,$2,$3,$4,$5,'failed',$6,$7,$8, now())`,
+        [
+          runId,
+          input.clientId,
+          effectiveRulesetId,
+          input.periodStart,
+          input.periodEnd,
+          mode,
+          dataRequiredCount,
+          err instanceof Error ? err.message : String(err),
+        ]
       );
+    } catch {
+      // swallow: the original error below is the one the caller needs
     }
     throw err;
   }
