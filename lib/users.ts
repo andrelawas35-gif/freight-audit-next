@@ -5,6 +5,7 @@
   Passwords are bcrypt-hashed; we never store or return plaintext.
 */
 
+import { randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { getSql } from '@/lib/db';
 
@@ -62,8 +63,10 @@ export function generateTempPassword(): string {
   // readable-ish, 12 chars
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
   let out = '';
-  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(12));
-  for (const b of bytes) out += chars[b % chars.length];
+  // randomInt is uniform over [0, chars.length). Do not go back to
+  // `randomByte % chars.length`: 256 is not a multiple of 55, so that favours the
+  // first 36 characters by ~25% (CodeQL js/biased-cryptographic-random).
+  for (let i = 0; i < 12; i++) out += chars[randomInt(chars.length)];
   return out;
 }
 
