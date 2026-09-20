@@ -65,7 +65,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `DATABASE_URL` | Yes | Neon Postgres connection string |
+| `DATABASE_URL` | Yes | Neon Postgres connection string. Locally, use a development branch, never production (see Local Database Safety) |
 | `NEXTAUTH_SECRET` | Yes | Auth.js JWT signing secret |
 | `NEXTAUTH_URL` | Prod | Full app URL |
 | `INGEST_SECRET` | Yes | Webhook auth header |
@@ -77,6 +77,16 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 | `SENTRY_ORG` | Build | Sentry org for source map uploads |
 | `SENTRY_PROJECT` | Build | Sentry project for source map uploads |
 | `SENTRY_AUTH_TOKEN` | Build | Sentry auth token for source map uploads |
+
+## Local Database Safety
+
+Local work must never run against the production Neon branch.
+
+- **Use a development branch.** Point `DATABASE_URL` in `.env.local` at a Neon branch created for development. A new branch copies its parent's role password, so also reset the role password on the dev branch (Neon console, the branch's roles); otherwise that address would open production too.
+- **Destructive commands are guarded.** `db:migrate`, `db:provision`, `db:push`, `db:studio`, `db:pull` and `db:generate` refuse any endpoint listed in `db/protected-endpoints.json`. To run one against production on purpose, set `ALLOW_PRODUCTION_DB=yes-this-is-production` for that single command. The check is `db/guard.ts`.
+- **The deployed app is not guarded.** `lib/db.ts` legitimately uses production; the guard covers command-line tooling only.
+- **Migrations.** `db/migrate.ts` applies files in order and records each in `_migrations`; set `TEST_DATABASE_URL` to point it at a disposable branch. Check the Repo and Production columns of `db/migrations/MIGRATION_REGISTRY.md` before assuming what production has.
+- **Never paste a connection string or password** into a Work Object, commit, chat message or issue.
 
 ## Domain Docs
 
