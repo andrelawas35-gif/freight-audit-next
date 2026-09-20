@@ -178,7 +178,7 @@ export type PolicyBacktestResultRow = {
   id: string;
   backtest_run_id: string;
   client_id: string;
-  rule_id: string;
+  rule_id: string | null;
   shipment_id: string | null;
   invoice_id: string | null;
   audit_result_id: string | null;
@@ -628,7 +628,7 @@ export async function runPolicyBacktest(input: {
         resultRows.push({
           backtestRunId: '', // filled below
           clientId: input.clientId,
-          ruleId: 'data_required',
+          ruleId: null, // no rule fired: the shipment could not be evaluated (migration 0032)
           shipmentId: ctx.shipmentId || null,
           invoiceId: ctx.invoiceId || null,
           auditResultId: ctx.auditResultId || null,
@@ -660,7 +660,7 @@ export async function runPolicyBacktest(input: {
           resultRows.push({
             backtestRunId: '',
             clientId: input.clientId,
-            ruleId: 'data_required',
+            ruleId: null, // no rule fired: the shipment could not be evaluated (migration 0032)
             shipmentId: context.shipmentId || null,
             invoiceId: context.invoiceId || null,
             auditResultId: context.auditResultId || null,
@@ -683,7 +683,7 @@ export async function runPolicyBacktest(input: {
           resultRows.push({
             backtestRunId: '',
             clientId: input.clientId,
-            ruleId: decision.ruleId || 'default_allow',
+            ruleId: decision.ruleId ?? null,
             shipmentId: context.shipmentId || null,
             invoiceId: context.invoiceId || null,
             auditResultId: context.auditResultId || null,
@@ -705,7 +705,7 @@ export async function runPolicyBacktest(input: {
         resultRows.push({
           backtestRunId: '',
           clientId: input.clientId,
-          ruleId: decision.ruleId || 'default_allow',
+          ruleId: decision.ruleId ?? null,
           shipmentId: context.shipmentId || null,
           invoiceId: context.invoiceId || null,
           auditResultId: context.auditResultId || null,
@@ -1258,7 +1258,7 @@ async function loadBacktestContexts(input: {
 type PolicyBacktestInsert = {
   backtestRunId: string;
   clientId: string;
-  ruleId: string;
+  ruleId: string | null;
   shipmentId: string | null;
   invoiceId: string | null;
   auditResultId: string | null;
@@ -1279,7 +1279,7 @@ function toBacktestInsert(
   return {
     backtestRunId: runId,
     clientId: context.clientId,
-    ruleId: decision.ruleId || 'default_allow',
+    ruleId: decision.ruleId ?? null,
     shipmentId: context.shipmentId || null,
     invoiceId: context.invoiceId || null,
     auditResultId: context.auditResultId || null,

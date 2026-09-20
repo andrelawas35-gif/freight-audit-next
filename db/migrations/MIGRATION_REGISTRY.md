@@ -40,7 +40,8 @@
 | **0029** | **V2** | **reserved** | **vision_exception_dedup (ADR 0020, Wave 2)** |
 | **0030** | **V1** | **reserved** | **rasterizer_config (ADR 0018, Wave 4, optional)** |
 | **0031** | **—** | **reserved** | **degradation-alert state (ADR 0020, Wave 2)** |
-| **0032** | **—** | **available** | **Next migration** |
+| **0032** | **WO 2026-09-19-002** | **pending** | **backtest_result_rule_id_nullable — drops NOT NULL on policy_backtest_results.rule_id so DATA_REQUIRED rows need no synthetic rule; in repo; not yet applied to production; needs HC0 review** |
+| **0033** | **—** | **available** | **Next migration** |
 
 ## Allocation Protocol
 
