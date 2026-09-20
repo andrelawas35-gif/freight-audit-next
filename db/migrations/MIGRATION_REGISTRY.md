@@ -4,7 +4,7 @@
 > **Updated**: 2026-09-19
 > 
 > This registry is the single source of truth for migration number allocation.
-> All migration-writing tracks (E3, E4, E5) MUST claim numbers here before writing SQL.
+> All migration-writing tracks MUST claim numbers here before writing SQL.
 
 | Number | Owner | Status | Description |
 |--------|-------|--------|-------------|
@@ -14,7 +14,7 @@
 | 0003 | — | applied | SFTP fetch tracking (sftp_processed_files) |
 | 0004 | — | applied | Gateway insurance intelligence tables |
 | 0005 | — | applied | Policy intelligence MVP (policy tables) |
-| 0006 | C0 | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS — conditional on business tables) |
+| 0006 | C0 | applied | Keystone contract (gateway_decisions, policy_taxonomy_candidates, app_tenant role, RLS) |
 | 0007 | — | applied | Backtest correctness (dollar storage, result tracking) |
 | 0008 | — | applied | Soft delete columns (deleted_at on key tables) |
 | 0009 | — | applied | Audit trail (upload_logs, change tracking) |
@@ -29,11 +29,11 @@
 | 0018 | E3 | applied | RLS rollout portal read-set + business table policies + GRANT (ADR 0013) |
 | 0019 | E5 | applied | staff_reviewed column (ADR 0015) |
 | 0020 | E5 | applied | clause_hash index (btree→hash dedup) |
-| 0021 | E5 | reserved | T3 batch index / pipeline schema |
-| 0022 | E4 | applied | gateway_active_flag + t4_status_vocabulary |
-| 0023 | E4 | applied | converge_insurance_rules |
-| 0024 | E6 | applied | vision_extraction_columns |
-| 0025 | E5 | applied | golden_examples_for_few_shot |
+| 0021 | E2 | applied | gateway_active flag on policy_rulesets |
+| 0022 | E3 | applied | T4 status vocabulary (flagged_at, flagged_by on policy_scope_exclusions) |
+| 0023 | E5 | applied | Converge insurance_policy_rules → policy_rules |
+| 0024 | — | applied | Vision extraction columns |
+| 0025 | — | applied | Golden examples for few-shot extraction |
 | 0026 | H1 | pending | subject_type + subject_id columns (Wave 0 keystone, no UNIQUE) — in repo; not yet applied to production |
 | **0027** | **H4** | **pending** | **UNIQUE(subject_type, subject_id, "Detected by") + dedup (Wave 3) — in repo; not yet applied to production. Its dedup `DELETE` SET-NULLs `audit_result_id` on policy_backtest_results, gateway_behavioral_tags, shipment_insurance_audit_results (0015 FKs): run a read-only duplicate/child-reference count against production before applying.** |
 | **0028** | **C0 (keystone)** | **applied** | **vision_attempt_records — append-only extraction attempt history (ADR 0020, Wave 0)** |
@@ -57,4 +57,4 @@
 db/migrations/NNNN_descriptive_snake_name.sql
 ```
 
-Example: `db/migrations/0019_staff_reviewed_column.sql`
+Example: `db/migrations/0026_your_migration_name.sql`

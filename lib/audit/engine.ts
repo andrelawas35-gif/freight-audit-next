@@ -145,17 +145,23 @@ export async function runAudit(options: {
     });
 
     const conflictTarget = '(subject_type, subject_id, "Detected by")';
-    await sql.transaction((txn) => [
-      ...insertQueries(txn, 'Audit Results', records, { onConflict: conflictTarget }),
-      ...(clientId
-        ? [
-            txn.query(
-              `UPDATE "Clients" SET "Last audit run" = $1 WHERE id = $2`,
-              [new Date().toISOString(), clientId],
-            ),
-          ]
-        : []),
-    ]);
+    await sql.transaction((txn) => {
+      // Findings inserts via the shared builder. ON CONFLICT DO NOTHING closes
+      // the concurrent-write race (ADR 0017, migration 0027).
+      const queries: import('@neondatabase/serverless').NeonQueryInTransaction[] = [
+        ...insertQueries(txn, 'Audit Results', records, { onConflict: conflictTarget }),
+      ];
+
+      // Update client's last-audit timestamp within the same transaction
+      if (clientId) {
+        queries.push(txn.query(
+          `UPDATE "Clients" SET "Last audit run" = $1 WHERE id = $2`,
+          [auditedAt, clientId]
+        ));
+      }
+
+      return queries;
+    });
   } else if (!dryRun && clientId) {
     await updateRecord('Clients', clientId, {
       'Last audit run': new Date().toISOString(),

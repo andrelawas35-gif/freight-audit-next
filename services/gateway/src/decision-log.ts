@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getSql } from '../../../lib/db';
+import { getSql } from './db';
 import { getConfig } from './config';
 
 interface DecisionLogEntry {

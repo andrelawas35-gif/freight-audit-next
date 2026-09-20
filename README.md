@@ -1,5 +1,8 @@
 # Freight Audit Console — Next.js Starter
 
+> For laptop-independent development from a phone or tablet, see
+> [Phone and Cloud Development](docs/PHONE-CLOUD-DEVELOPMENT.md).
+
 This is your design files converted to a real Next.js app connected to Airtable.
 It's set up so you can add your marketing site and client portal later
 in the same codebase.

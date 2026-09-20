@@ -1,18 +1,23 @@
-# Mission: Freight Audit Platform Architecture
+# Mission: Operate Aurelian as an AI-Assisted Technical Founder
 
 ## Why
-To understand the core architecture, data flow, and subsystems of the Freight Audit Platform. This understanding is essential for navigating the codebase, building new features, and comprehending how data moves from ingestion to policy enforcement.
+To supervise, improve, and safely release an AI-built freight audit platform without needing
+to become a full-time programmer. Architecture knowledge should enable sound product, risk,
+evidence, and release decisions while Codex performs most implementation work.
 
 ## Success looks like
-- Can draw the high-level data flow from ingestion to audit results.
-- Understand the distinction between operational audit engines and the strategic policy evaluator.
-- Can identify the role of the Gateway in the pre-shipment roadmap.
-- Know the key invariants that govern system behavior.
+- Can explain how a proposed feature fits Aurelian's data flow and domain boundaries.
+- Can approve an implementation brief using behavior, invariants, acceptance criteria, and exclusions.
+- Can assess test evidence, tenant and financial risk, failure handling, and rollback before release.
+- Can direct Codex through specification, implementation, independent review, and verification.
+- Can distinguish deterministic product authority from suggest-only LLM and agent behavior.
 
 ## Constraints
-- Focus on the high-level ecosystem view first, diving into code-level details only when necessary.
-- Learning should happen within the current Next.js project context.
+- Use short lessons tied to real decisions and changes in this repository.
+- Prefer plain language, diagrams, concrete failure scenarios, and evidence over syntax memorization.
+- Build on the existing high-level understanding of Aurelian's ingestion-to-recovery architecture.
 
 ## Out of scope
-- Deep dives into specific React components or CSS frameworks at this stage.
-- Detailed DevOps or infrastructure deployment mechanics.
+- Becoming a general-purpose or full-time software engineer.
+- Memorizing framework syntax that Codex can reliably inspect and generate.
+- Deep implementation detail unless it is required to judge business behavior or operational risk.

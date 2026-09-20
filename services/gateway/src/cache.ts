@@ -12,13 +12,13 @@
  * Gateway is a trusted internal service that needs cross-tenant ruleset data.
  */
 
-import { getSql } from '../../../lib/db';
+import { getSql } from './db';
 import { getConfig } from './config';
 import type {
   PolicyRuleForEvaluation,
   PolicyCondition,
   PolicyAction,
-} from '../../../lib/intelligence/policy-evaluator';
+} from './evaluator-types';
 
 interface CachedRuleset {
   rulesetVersion: string;

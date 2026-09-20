@@ -1,4 +1,5 @@
 import { getSql } from '@/lib/db';
+import crypto from 'crypto';
 import {
   evaluatePolicyContext,
   type PolicyAction,

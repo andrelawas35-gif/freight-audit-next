@@ -15,12 +15,14 @@ import {
   getGatewayReadinessReport,
   getTopGatewayRuleSuggestions,
   getClientScopeExclusions,
+  getDataReadinessReport,
 } from '@/lib/intelligence/reports';
 import type {
   InsuranceExposureRow,
   GatewayReadinessRow,
   GatewayRuleSuggestionRow,
   ScopeExclusionSummary,
+  DataReadinessReport,
 } from '@/lib/intelligence/reports';
 import type { Dispute, Invoice, Client, AuditResult } from '@/lib/types';
 
@@ -31,6 +33,7 @@ export type ComplianceData = {
   gatewayReadiness: GatewayReadinessRow[];
   ruleSuggestions: GatewayRuleSuggestionRow[];
   scopeExclusions: ScopeExclusionSummary[];
+  dataReadiness: DataReadinessReport | null;
 };
 
 export type RecoveryData = {
@@ -228,13 +231,18 @@ async function fetchRecoveryData(
 // ── Compliance data fetch ───────────────────────────────────────
 
 async function fetchComplianceData(clientId: string, db?: SqlLike): Promise<ComplianceData> {
-  const [insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions] = await Promise.all([
-    getInsuranceExposureReport({ clientId, months: 6 }, db),
-    getGatewayReadinessReport({ clientId, months: 6 }, db),
-    getTopGatewayRuleSuggestions({ clientId, limit: 5 }, db),
-    getClientScopeExclusions(clientId, db),
-  ]);
-  return { insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions };
+  const [insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions, dataReadiness] =
+    await Promise.all([
+      getInsuranceExposureReport({ clientId, months: 6 }, db),
+      getGatewayReadinessReport({ clientId, months: 6 }, db),
+      getTopGatewayRuleSuggestions({ clientId, limit: 5 }, db),
+      getClientScopeExclusions(clientId, db),
+      getDataReadinessReport(clientId, db).catch((err) => {
+        console.error('Data readiness report failed:', err);
+        return null;
+      }),
+    ]);
+  return { insuranceExposure, gatewayReadiness, ruleSuggestions, scopeExclusions, dataReadiness };
 }
 
 // ── Unified data loader ─────────────────────────────────────────
@@ -261,6 +269,7 @@ export async function getPortalDashboardData(
     gatewayReadiness: [],
     ruleSuggestions: [],
     scopeExclusions: [],
+    dataReadiness: null,
   };
   let companyName = 'Your dashboard';
 

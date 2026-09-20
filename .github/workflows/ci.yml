@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main, release/*]
   push:
@@ -10,6 +11,10 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
     # Manual trigger for on-demand heavy suite runs
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ── Per-PR correctness gate (hard-blocking) ─────────────────────
