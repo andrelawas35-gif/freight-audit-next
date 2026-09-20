@@ -37,6 +37,9 @@ const describeIf = hasTestDatabase() ? describe : describe.skip;
 
 describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
   let pool: ReturnType<typeof getTestPool>;
+  // Outcomes of the concurrent runs. Kept (not discarded) so a run that throws
+  // is a visible failure, not a silent empty table that passes "no duplicates".
+  let runOutcomes: PromiseSettledResult<unknown>[] = [];
 
   beforeAll(async () => {
     pool = getTestPool();
@@ -66,7 +69,7 @@ describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
       runAudit({ clientId: CLIENT_ID, runStartedAt: corpus.pivotT }),
     ];
 
-    await Promise.allSettled(runs);
+    runOutcomes = await Promise.allSettled(runs);
   });
 
   afterAll(async () => {
@@ -74,10 +77,28 @@ describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
     await closeTestPool();
   });
 
-  // ── This test documents the expected current failure ──────────
+  // ── Precondition: the runs must actually complete ──────────────
+  //
+  // Without this, a run that throws (e.g. a CHECK-constraint violation) writes
+  // no rows and the duplicate test below passes vacuously. That is exactly how
+  // suite 2 was green on pre-H4 code: every run died on chk_audit_results_client_id.
 
-  it('RED: concurrent runs produce duplicate findings (no UNIQUE constraint)', async () => {
+  it('all concurrent runs complete without throwing', () => {
+    const failures = runOutcomes
+      .filter((o): o is PromiseRejectedResult => o.status === 'rejected')
+      .map((o) => (o.reason instanceof Error ? o.reason.message : String(o.reason)));
+    expect(runOutcomes).toHaveLength(3);
+    expect(failures, `concurrent runAudit() rejections:\n${failures.join('\n')}`).toEqual([]);
+  });
+
+  // ── GREEN: UNIQUE constraint + ON CONFLICT DO NOTHING ──────────
+
+  it('GREEN: concurrent runs produce exactly one finding per natural key', async () => {
     const actualRows = await fetchActualFindings(pool, CLIENT_ID);
+
+    // Non-vacuity: the seeded corpus contains planted violations, so an empty
+    // result means the engine wrote nothing, not that there were no duplicates.
+    expect(actualRows.length).toBeGreaterThan(0);
 
     // Count findings per natural key
     const keyCounts = new Map<string, number>();
@@ -92,22 +113,17 @@ describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
       if (count > 1) duplicates.push(`${key} (×${count})`);
     }
 
-    // SUITE 2 IS SUPPOSED TO BE RED.
-    // On current code (no UNIQUE constraint), we expect duplicates.
-    // Document them clearly:
     if (duplicates.length > 0) {
       console.log(
-        `[Suite 2 — EXPECTED FAILURE] Duplicate findings detected (${duplicates.length} keys):\n` +
-        duplicates.map((d) => `  - ${d}`).join('\n') +
-        `\n  This is the acceptance bar for H4: add UNIQUE(subject_type, subject_id, "Detected by") + ON CONFLICT DO NOTHING.`,
+        `[Suite 2 — UNEXPECTED FAILURE] Duplicate findings detected (${duplicates.length} keys):\n` +
+        duplicates.map((d) => `  - ${d}`).join('\n'),
       );
     }
 
-    // This assertion documents the acceptance criteria for H4.
-    // When H4 lands, this should become:
-    //   expect(duplicates).toHaveLength(0);
-    // For now, it's intentionally checking that we CAN reproduce duplicates:
-    expect(duplicates.length).toBeGreaterThan(0);
+    // H4 (Wave 3): UNIQUE(subject_type, subject_id, "Detected by") +
+    // ON CONFLICT DO NOTHING ensures at most one finding per natural key,
+    // even under concurrent runs. This MUST be zero.
+    expect(duplicates).toHaveLength(0);
   });
 
   // ── These pass/fail depending on concurrency behavior ─────────
@@ -135,6 +151,8 @@ describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
     // Count findings before re-run
     const beforeRows = await fetchActualFindings(pool, CLIENT_ID);
     const beforeCount = beforeRows.length;
+    // Non-vacuity: 0 before and 0 after would "prove" idempotency of nothing.
+    expect(beforeCount).toBeGreaterThan(0);
 
     // Re-run the audit
     const { runAudit } = await import('@/lib/audit/engine');
@@ -147,17 +165,13 @@ describeIf('Suite 2 — Concurrency (RED: duplicates expected)', () => {
     const afterRows = await fetchActualFindings(pool, CLIENT_ID);
     const afterCount = afterRows.length;
 
-    // On current code (no unique constraint, in-memory skip),
-    // the re-run may or may not add duplicates depending on whether
-    // the skip logic catches it. Either way, record the behavior.
+    // H4: UNIQUE constraint + ON CONFLICT DO NOTHING guarantees
+    // idempotent re-runs — exactly the same findings, no duplicates.
     console.log(
       `[Suite 2] Idempotency check: ${beforeCount} before, ${afterCount} after re-run. ` +
       `Delta: ${afterCount - beforeCount}`,
     );
-
-    // With the UNIQUE constraint (H4), afterCount === beforeCount.
-    // For now, this assertion may fail if the in-memory skip is incomplete.
-    expect(afterCount).toBeGreaterThanOrEqual(beforeCount);
+    expect(afterCount).toBe(beforeCount);
   });
 
   // ── Negative test: ensure 3PL duplicate-cycle findings are distinct ──

@@ -38,11 +38,11 @@ describeIf('Suite 3 — Drain Rate', () => {
     try {
       const JOB_COUNT = 100; // representative spike
 
-      // Bulk-insert audit jobs
+      // Bulk-insert audit jobs (status must match CHECK constraint: queued/running/completed/failed)
       for (let i = 0; i < JOB_COUNT; i++) {
         await client.query(
           `INSERT INTO audit_jobs (id, client_id, started_at, status)
-           VALUES ($1, $2, $3, 'pending')`,
+           VALUES ($1, $2, $3, 'queued')`,
           [
             `drain_job_${String(i).padStart(5, '0')}`,
             'test_client_drain',
@@ -53,7 +53,7 @@ describeIf('Suite 3 — Drain Rate', () => {
 
       // Verify count
       const countRes = await client.query(
-        `SELECT COUNT(*) AS cnt FROM audit_jobs WHERE client_id = $1 AND status = 'pending'`,
+        `SELECT COUNT(*) AS cnt FROM audit_jobs WHERE client_id = $1 AND status = 'queued'`,
         ['test_client_drain'],
       );
       const count = parseInt((countRes.rows[0] as any).cnt, 10);
@@ -72,12 +72,12 @@ describeIf('Suite 3 — Drain Rate', () => {
       const claimRes = await client.query(
         `WITH next_job AS (
            SELECT id FROM audit_jobs
-            WHERE status = 'pending'
+            WHERE status = 'queued'
             ORDER BY started_at ASC
             LIMIT 1
             FOR UPDATE SKIP LOCKED
          )
-         UPDATE audit_jobs SET status = 'claimed'
+         UPDATE audit_jobs SET status = 'running'
           FROM next_job
           WHERE audit_jobs.id = next_job.id
           RETURNING audit_jobs.id`,
@@ -86,9 +86,9 @@ describeIf('Suite 3 — Drain Rate', () => {
       const claimedCount = claimRes.rows.length;
       expect(claimedCount).toBeLessThanOrEqual(1);
 
-      // Count remaining pending jobs
+      // Count remaining queued jobs
       const pendingRes = await client.query(
-        `SELECT COUNT(*) AS cnt FROM audit_jobs WHERE status = 'pending'`,
+        `SELECT COUNT(*) AS cnt FROM audit_jobs WHERE status = 'queued'`,
       );
       const pending = parseInt((pendingRes.rows[0] as any).cnt, 10);
 
@@ -120,12 +120,12 @@ describeIf('Suite 3 — Drain Rate', () => {
       const claimRes = await client.query(
         `WITH next_jobs AS (
            SELECT id FROM audit_jobs
-            WHERE status = 'pending'
+            WHERE status = 'queued'
             ORDER BY started_at ASC
             LIMIT $1
             FOR UPDATE SKIP LOCKED
          )
-         UPDATE audit_jobs SET status = 'claimed'
+         UPDATE audit_jobs SET status = 'running'
           FROM next_jobs
           WHERE audit_jobs.id = next_jobs.id
           RETURNING audit_jobs.id`,

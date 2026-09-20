@@ -66,9 +66,9 @@ export async function fetchActualFindings(
       `SELECT id, subject_type, subject_id, "Detected by", "Variance", "Outcome",
               "Gateway preventability", "Gateway category", "Gateway rule suggestion"
          FROM "Audit Results"
-        WHERE "Client" @> $1::text[]
+        WHERE client_id = $1
         ORDER BY subject_type, subject_id, "Detected by"`,
-      [[clientId]],
+      [clientId],
     );
     return result.rows as FindingRow[];
   } finally {
@@ -159,8 +159,8 @@ export async function sumVarianceSql(
     const result = await client.query(
       `SELECT COALESCE(SUM("Variance"), 0) AS total
          FROM "Audit Results"
-        WHERE "Client" @> $1::text[]`,
-      [[clientId]],
+        WHERE client_id = $1`,
+      [clientId],
     );
     return parseFloat((result.rows[0] as any).total);
   } finally {

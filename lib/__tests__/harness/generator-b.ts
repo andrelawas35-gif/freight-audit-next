@@ -130,6 +130,7 @@ export function generateCorpus(config: SeedConfig): GeneratedCorpus {
     'Invoice date': '2026-06-22',
     'Payment due date': '2026-07-22',
     'Clients': [clientId],
+    client_id: clientId,
     created_at: timeAt(pivotT, -60), // before T — must be flagged
   });
   expectedFindings.push({
@@ -474,12 +475,9 @@ export function generateCorpus(config: SeedConfig): GeneratedCorpus {
   auditJobs.push({
     id: genId('job'),
     client_id: clientId,
+    job_type: 'parcel',
     started_at: pivotT,
     status: 'running',
-    invoices_checked: 0,
-    findings_created: 0,
-    total_variance: 0,
-    errors: [],
   });
 
   return {
@@ -515,8 +513,24 @@ export async function seedCorpus(
       );
     }
 
-    // Insert invoices
+    // Insert client record (required by engine's Clients."Last audit run" update)
+    const clientRecord = corpus.invoices[0]?.['Clients'];
+    const clientId = Array.isArray(clientRecord) ? clientRecord[0] : undefined;
+    if (clientId) {
+      await client.query(
+        `INSERT INTO "Clients" (id, "Company name", "Contract active")
+         VALUES ($1, 'Test Client ' || $1, true)
+         ON CONFLICT (id) DO NOTHING`,
+        [clientId],
+      );
+    }
+
+    // Insert invoices (auto-derive client_id from "Clients" array if missing)
     for (const inv of corpus.invoices) {
+      // Ensure client_id is set (NOT NULL per migration 0011)
+      if (!inv.client_id && Array.isArray(inv['Clients']) && (inv['Clients'] as unknown[]).length > 0) {
+        inv.client_id = (inv['Clients'] as unknown[])[0];
+      }
       const entries = Object.entries(inv).filter(([, v]) => v !== undefined);
       const cols = entries.map(([k]) => `"${k}"`).join(', ');
       const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');

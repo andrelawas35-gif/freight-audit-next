@@ -27,7 +27,7 @@ import {
   sumVarianceSql,
   toCents,
 } from '../harness/oracle';
-import { getActiveRuleCodes } from '@/lib/intelligence/taxonomy';
+import { getActiveRuleCodes, defaultGatewayTagForRule } from '@/lib/intelligence/taxonomy';
 
 // ── Test configuration ───────────────────────────────────────────
 
@@ -117,8 +117,9 @@ describeIf('Suite 1 — Correctness', () => {
     try {
       // Count distinct invoice ids referenced in Audit Results
       const auditedRes = await client.query(
-        `SELECT COUNT(DISTINCT unnest("Invoice")) AS cnt
-           FROM "Audit Results"
+        `SELECT COUNT(DISTINCT inv_id) AS cnt
+           FROM "Audit Results",
+                LATERAL unnest("Invoice") AS inv_id
           WHERE "Client" @> $1::text[]`,
         [[CLIENT_ID]],
       );
@@ -315,7 +316,6 @@ describeIf('Suite 1 — Correctness', () => {
     // If a code is missing, defaultGatewayTagForRule throws.
     for (const code of activeCodes) {
       expect(() => {
-        const { defaultGatewayTagForRule } = require('@/lib/intelligence/taxonomy');
         defaultGatewayTagForRule(code, 10);
       }).not.toThrow();
     }

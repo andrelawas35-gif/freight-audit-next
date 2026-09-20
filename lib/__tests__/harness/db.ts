@@ -22,6 +22,21 @@ export class MissingTestDatabaseError extends Error {
   }
 }
 
+/**
+ * Check whether a test database is configured.
+ * Use this to skip heavy suites when TEST_DATABASE_URL is not set.
+ */
+export function hasTestDatabase(): boolean {
+  return Boolean(process.env.TEST_DATABASE_URL);
+}
+
+/**
+ * Returns the TEST_DATABASE_URL if configured, for conditional test skipping.
+ */
+export function getTestDatabaseUrl(): string | undefined {
+  return process.env.TEST_DATABASE_URL;
+}
+
 let _pool: Pool | null = null;
 
 /**
@@ -51,16 +66,34 @@ export async function closeTestPool(): Promise<void> {
 /**
  * Truncate a set of tables between suites for isolation.
  * Uses CASCADE to handle FK dependencies.
+ * Falls back gracefully when superuser is unavailable (Neon).
  */
 export async function truncateTables(pool: Pool, tables: string[]): Promise<void> {
   const client = await pool.connect();
   try {
-    // Disable FK triggers temporarily for fast multi-table truncation
-    await client.query('SET session_replication_role = replica');
-    for (const table of tables) {
-      await client.query(`TRUNCATE TABLE ${table} CASCADE`);
+    // Try fast path first (requires superuser — may fail on Neon)
+    let fastPath = true;
+    try {
+      await client.query('SET session_replication_role = replica');
+    } catch {
+      fastPath = false;
     }
-    await client.query('SET session_replication_role = DEFAULT');
+
+    if (fastPath) {
+      try {
+        for (const table of tables) {
+          await client.query(`TRUNCATE TABLE ${table} CASCADE`);
+        }
+      } finally {
+        await client.query('SET session_replication_role = DEFAULT');
+      }
+    } else {
+      // No superuser — truncate in reverse order so FKs don't block.
+      // CASCADE handles any remaining dependencies.
+      for (const table of [...tables].reverse()) {
+        await client.query(`TRUNCATE TABLE ${table} CASCADE`);
+      }
+    }
   } finally {
     client.release();
   }

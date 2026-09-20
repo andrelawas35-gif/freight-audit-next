@@ -150,7 +150,8 @@ export async function seedRulebookFixture(
         `INSERT INTO rulebook
            (scope, client_id, carrier_scac, service_level, rule_key,
             num_value, bool_value, text_value, effective_from, effective_to, clause_ref)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING`,
         [
           r.scope, r.clientId, r.carrierScac, r.serviceLevel,
           r.ruleKey, r.numValue, r.boolValue, r.textValue,

@@ -41,7 +41,7 @@ describeIf('Suite 5 — Claim Race', () => {
       for (let i = 0; i < count; i++) {
         await client.query(
           `INSERT INTO audit_jobs (id, client_id, started_at, status)
-           VALUES ($1, $2, $3, 'pending')`,
+           VALUES ($1, $2, $3, 'queued')`,
           [
             `race_job_${String(i).padStart(5, '0')}`,
             'test_client_race',
@@ -70,12 +70,12 @@ describeIf('Suite 5 — Claim Race', () => {
         const result = await client.query(
           `WITH next_job AS (
              SELECT id FROM audit_jobs
-              WHERE status = 'pending'
+              WHERE status = 'queued'
               ORDER BY started_at ASC
               LIMIT 1
               FOR UPDATE SKIP LOCKED
            )
-           UPDATE audit_jobs SET status = 'claimed'
+           UPDATE audit_jobs SET status = 'running'
             FROM next_job
             WHERE audit_jobs.id = next_job.id
             RETURNING audit_jobs.id`,
