@@ -1,32 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── mock wiring ──────────────────────────────────────────────
-const { query } = vi.hoisted(() => ({
+const { query, transaction } = vi.hoisted(() => ({
   query: vi.fn(),
+  transaction: vi.fn(),
 }));
 
-// Build a mock sql.transaction() that executes the callback's returned
-// query descriptors against the mock `query` function.
-function makeTransaction() {
-  return async (cb: (txn: { query: (text: string, params: unknown[]) => unknown }) => unknown[]) => {
-    const txn = {
-      query: (text: string, params: unknown[]) => ({ text, params }),
-    };
-    const queries = cb(txn);
-    const results = [];
-    for (const q of queries) {
-      const descriptor = q as { text: string; params: unknown[] };
-      results.push(await query(descriptor.text, descriptor.params));
-    }
-    return results;
-  };
-}
-
 vi.mock('@/lib/db', () => ({
-  getSql: () => ({
-    query,
-    transaction: makeTransaction(),
-  }),
+  getSql: () => ({ query, transaction }),
 }));
 
 const {
@@ -129,6 +110,10 @@ function makeShipment(overrides: Partial<Shipment> = {}): Shipment {
 beforeEach(() => {
   vi.clearAllMocks();
   query.mockResolvedValue([]);
+  // transaction mock: resolves to an array of empty arrays (one per query in the tx)
+  transaction.mockImplementation((cb: (txn: { query: typeof query }) => unknown[]) =>
+    Promise.resolve((cb({ query }) as unknown[]).map(() => [] as Record<string, unknown>[]))
+  );
   fetchAllRecordsMock.mockResolvedValue([]);
   fetchRecordsByIdsMock.mockResolvedValue([]);
   fetchRecordsByLinkedIdsMock.mockResolvedValue([]);
@@ -179,6 +164,7 @@ describe('runAudit — orchestration', () => {
       String(sql).includes('INSERT INTO')
     );
     expect(insertCalls).toHaveLength(0);
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -217,6 +203,7 @@ describe('runAudit — finding generation', () => {
       return s.includes('INSERT INTO') || s.includes('UPDATE "Clients"');
     });
     expect(writeCalls).toHaveLength(0);
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -234,17 +221,24 @@ describe('runAudit — transaction safety', () => {
 
     await runAudit({ clientId: 'client-1' });
 
-    // Verify INSERT + UPDATE both executed (they run inside the transaction)
+    // Transaction should have been called (not raw BEGIN/COMMIT)
+    expect(transaction).toHaveBeenCalled();
+
+    // Verify INSERT + UPDATE both executed (they run inside the transaction callback)
     const insertCalls = query.mock.calls.filter(([sql]) =>
       String(sql).includes('INSERT INTO "Audit Results"')
     );
     const updateCalls = query.mock.calls.filter(([sql]) =>
       String(sql).includes('UPDATE "Clients"')
     );
-
-    // Both the insert and update should have been called (via transaction)
     expect(insertCalls.length).toBeGreaterThan(0);
     expect(updateCalls.length).toBeGreaterThan(0);
+
+    // H4 (ADR 0017, migration 0027): the findings INSERT must carry ON CONFLICT DO NOTHING
+    // on the natural key, or concurrent runs can write duplicate findings.
+    for (const [sql] of insertCalls) {
+      expect(String(sql)).toContain('ON CONFLICT (subject_type, subject_id, "Detected by") DO NOTHING');
+    }
 
     // No raw BEGIN/COMMIT/ROLLBACK — all writes go through sql.transaction()
     const rawTxCalls = query.mock.calls
@@ -253,33 +247,22 @@ describe('runAudit — transaction safety', () => {
     expect(rawTxCalls).toHaveLength(0);
   });
 
-  it('transaction rollback: insert failure rejects the whole batch', async () => {
+  it('throws if transaction fails (atomic rollback)', async () => {
     const invoice = makeInvoice({ 'Amount billed': 50 });
     const shipment = makeShipment({ 'Address classification': 'Commercial' });
 
     fetchAllRecordsMock.mockResolvedValue([invoice]);
     fetchRecordsByIdsMock.mockResolvedValue([shipment]);
     fetchRecordsByLinkedIdsMock.mockResolvedValue([]);
+    transaction.mockRejectedValue(new Error('DB write failed'));
 
-    // Reject on any INSERT — the transaction mock will throw, which
-    // sql.transaction() propagates, causing runAudit to reject.
-    query.mockImplementation((sqlText: string) => {
-      if (String(sqlText).includes('INSERT INTO "Audit Results"')) {
-        return Promise.reject(new Error('DB write failed'));
-      }
-      return Promise.resolve([]);
-    });
-
+    // sql.transaction() rejecting must propagate out of runAudit — the batch
+    // is all-or-nothing, so no partial findings can survive.
     await expect(runAudit({ clientId: 'client-1' })).rejects.toThrow('DB write failed');
 
-    // UPDATE should not have executed (it was in the same txn array)
-    const updateCalls = query.mock.calls.filter(([sql]) =>
-      String(sql).includes('UPDATE "Clients"')
-    );
-    // The update may or may not have been called depending on whether
-    // the transaction mock stops at first failure. Either way, the
-    // transaction rejected — no partial writes survived.
-    expect(updateCalls.length).toBeLessThanOrEqual(1);
+    // No raw ROLLBACK needed — sql.transaction() handles it internally
+    const sqlCalls = query.mock.calls.map(([sql]) => sql);
+    expect(sqlCalls).not.toContain('ROLLBACK');
   });
 });
 

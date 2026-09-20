@@ -11,11 +11,11 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { evaluatePolicyContext } from '../../../lib/intelligence/policy-evaluator';
+import { evaluatePolicyContext } from './evaluator-types';
 import type {
   ShipmentPolicyContext,
   PolicyDecision,
-} from '../../../lib/intelligence/policy-evaluator';
+} from './evaluator-types';
 import { selectRulesForShipment } from './cache';
 import { bufferDecision } from './decision-log';
 import { getConfig, shouldFailClosed } from './config';

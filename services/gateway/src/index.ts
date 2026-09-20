@@ -15,7 +15,7 @@ import { warmCache } from './cache';
 import { registerAuth } from './auth';
 import { precheckHandler } from './precheck';
 import { startBufferDrain, stopBufferDrain } from './decision-log';
-import { getSql } from '../../../lib/db';
+import { getSql } from './db';
 
 async function main(): Promise<void> {
   const config = loadConfig();

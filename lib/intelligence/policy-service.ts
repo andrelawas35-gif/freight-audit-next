@@ -1,4 +1,5 @@
 import { getSql } from '@/lib/db';
+import crypto from 'crypto';
 import {
   evaluatePolicyContext,
   type PolicyAction,
@@ -729,68 +730,78 @@ export async function runPolicyBacktest(input: {
 
   const effectiveRulesetId = input.rulesetId || findDominantRuleset(shipmentRulesetMap);
 
-  // ── 5. Write run and results in a transaction ─────────────────
-  await sql.query('BEGIN');
-  let runId = '';
+  // ── 5. Write run and results atomically via sql.transaction() ──
+  //    (Neon documented API, CLAUDE.md invariant #3).
+  //    Pre-generate the runId outside the transaction so all queries
+  //    can be pre-computed; sql.transaction() does not support
+  //    conditional branching or sequential-result-dependent logic.
+  const runId = crypto.randomUUID();
+  const snapshot = JSON.stringify(contexts.map(stripContextForSnapshot));
+
   try {
-    const [run] = await sql.query(
-      `INSERT INTO policy_backtest_runs (
-         client_id, ruleset_id, period_start, period_end, status, mode, input_snapshot,
-         data_required_count
-       ) VALUES ($1,$2,$3,$4,'running',$5,$6::jsonb,$7)
-       RETURNING id`,
-      [
-        input.clientId,
-        effectiveRulesetId,
-        input.periodStart,
-        input.periodEnd,
-        mode,
-        JSON.stringify(contexts.map(stripContextForSnapshot)),
-        dataRequiredCount,
-      ]
-    ) as { id: string }[];
-    runId = run.id;
+    await sql.transaction((txn) => {
+      const queries: ReturnType<typeof txn.query>[] = [];
 
-    // Stamp runId on all result rows and insert
-    for (const row of resultRows) {
-      row.backtestRunId = runId;
-      await sql.query(
-        `INSERT INTO policy_backtest_results (
-           backtest_run_id, client_id, rule_id, shipment_id, invoice_id, audit_result_id,
-           decision, category, message, suggested_fix, clause_ref, preventable_loss,
-           uninsured_exposure
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      // 5a. INSERT the backtest run
+      queries.push(txn.query(
+        `INSERT INTO policy_backtest_runs (
+           id, client_id, ruleset_id, period_start, period_end, status, mode, input_snapshot,
+           data_required_count
+         ) VALUES ($1,$2,$3,$4,$5,'running',$6,$7::jsonb,$8)`,
         [
-          row.backtestRunId,
-          row.clientId,
-          row.ruleId,
-          row.shipmentId,
-          row.invoiceId,
-          row.auditResultId,
-          row.decision,
-          row.category,
-          row.message,
-          row.suggestedFix,
-          row.clauseRef,
-          row.preventableLoss,
-          row.uninsuredExposure,
+          runId,
+          input.clientId,
+          effectiveRulesetId,
+          input.periodStart,
+          input.periodEnd,
+          mode,
+          snapshot,
+          dataRequiredCount,
         ]
-      );
-    }
+      ));
 
-    await sql.query(
-      `UPDATE policy_backtest_runs
-       SET status = 'completed',
-           shipments_checked = $2,
-           violations_found = $3,
-           preventable_margin_loss = $4,
-           uninsured_exposure = $5,
-           completed_at = now()
-       WHERE id = $1`,
-      [runId, contexts.length, resultRows.length, totals.preventableLoss, totals.uninsuredExposure]
-    );
+      // 5b. INSERT all result rows (pre-computed, no runtime dependency on runId insert)
+      for (const row of resultRows) {
+        queries.push(txn.query(
+          `INSERT INTO policy_backtest_results (
+             backtest_run_id, client_id, rule_id, shipment_id, invoice_id, audit_result_id,
+             decision, category, message, suggested_fix, clause_ref, preventable_loss,
+             uninsured_exposure
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            runId,
+            row.clientId,
+            row.ruleId,
+            row.shipmentId,
+            row.invoiceId,
+            row.auditResultId,
+            row.decision,
+            row.category,
+            row.message,
+            row.suggestedFix,
+            row.clauseRef,
+            row.preventableLoss,
+            row.uninsuredExposure,
+          ]
+        ));
+      }
 
-    await sql.query('COMMIT');
+      // 5c. UPDATE the run to completed
+      queries.push(txn.query(
+        `UPDATE policy_backtest_runs
+         SET status = 'completed',
+             shipments_checked = $2,
+             violations_found = $3,
+             preventable_margin_loss = $4,
+             uninsured_exposure = $5,
+             completed_at = now()
+         WHERE id = $1`,
+        [runId, contexts.length, resultRows.length, totals.preventableLoss, totals.uninsuredExposure]
+      ));
+
+      return queries;
+    });
+
     return {
       runId,
       shipmentsChecked: contexts.length,
@@ -798,15 +809,13 @@ export async function runPolicyBacktest(input: {
       dataRequired: dataRequiredCount,
     };
   } catch (err) {
-    await sql.query('ROLLBACK');
-    if (runId) {
-      await sql.query(
-        `UPDATE policy_backtest_runs
-         SET status = 'failed', error = $2, completed_at = now()
-         WHERE id = $1`,
-        [runId, err instanceof Error ? err.message : String(err)]
-      );
-    }
+    // Mark the run as failed (this runs outside the failed transaction)
+    await sql.query(
+      `UPDATE policy_backtest_runs
+       SET status = 'failed', error = $2, completed_at = now()
+       WHERE id = $1`,
+      [runId, err instanceof Error ? err.message : String(err)]
+    );
     throw err;
   }
 }

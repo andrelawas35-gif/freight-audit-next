@@ -1,32 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { query, recordRun } = vi.hoisted(() => ({
+const { query, transaction, recordRun } = vi.hoisted(() => ({
   query: vi.fn(),
+  transaction: vi.fn(),
   recordRun: vi.fn(),
 }));
 
-// Build a mock sql.transaction() that executes the callback's returned
-// query descriptors against the mock `query` function.
-function makeTransaction() {
-  return async (cb: (txn: { query: (text: string, params: unknown[]) => unknown }) => unknown[]) => {
-    const txn = {
-      query: (text: string, params: unknown[]) => ({ text, params }),
-    };
-    const queries = cb(txn);
-    const results = [];
-    for (const q of queries) {
-      const descriptor = q as { text: string; params: unknown[] };
-      results.push(await query(descriptor.text, descriptor.params));
-    }
-    return results;
-  };
-}
-
 vi.mock('@/lib/db', () => ({
-  getSql: () => ({
-    query,
-    transaction: makeTransaction(),
-  }),
+  getSql: () => ({ query, transaction }),
 }));
 vi.mock('./rulebook', () => ({
   loadRulebook: vi.fn().mockResolvedValue([]),
@@ -71,7 +52,12 @@ function makeFulfillmentQuery(firstPage: unknown[], secondPage: unknown[]) {
 
 describe('3PL audit pagination', () => {
   beforeEach(() => {
-    query.mockReset();
+    query.mockReset().mockResolvedValue([]);
+    // transaction mock: runs the callback, executes each query in the array
+    transaction.mockReset().mockImplementation(
+      (cb: (txn: { query: typeof query }) => unknown[]) =>
+        Promise.resolve((cb({ query }) as unknown[]).map(() => [] as Record<string, unknown>[]))
+    );
     recordRun.mockReset().mockResolvedValue(undefined);
   });
 
@@ -104,7 +90,7 @@ describe('3PL audit pagination', () => {
     expect(recordRun).toHaveBeenCalledWith(expect.objectContaining({ invoicesChecked: 501 }));
   });
 
-  it('wraps findings + mark-audited in a sql.transaction() per page', async () => {
+  it('wraps findings + mark-audited in sql.transaction() per page', async () => {
     const page = [{
       id: 'line-1',
       client_id: 'client-1',
@@ -116,18 +102,21 @@ describe('3PL audit pagination', () => {
 
     await runThreePLAudit({});
 
-    // Verify the UPDATE (mark-audited) was called — it only runs inside
-    // the transaction, so its presence confirms the transaction executed.
+    // Transaction should have been called (not raw BEGIN/COMMIT)
+    expect(transaction).toHaveBeenCalled();
+
+    // The UPDATE (mark-audited) only runs inside the transaction callback, so
+    // its presence confirms the callback executed.
     const updateCalls = query.mock.calls.filter(([sql]) =>
       String(sql).startsWith('UPDATE tpl_fulfillment_lines')
     );
     expect(updateCalls.length).toBeGreaterThan(0);
 
-    // No raw BEGIN/COMMIT/ROLLBACK — all writes go through sql.transaction()
-    const rawTxCalls = query.mock.calls
-      .map(([sql]) => String(sql))
-      .filter((s) => s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK');
-    expect(rawTxCalls).toHaveLength(0);
+    // No raw BEGIN/COMMIT/ROLLBACK should reach query
+    const sqlCalls = query.mock.calls.map(([sql]) => String(sql));
+    expect(sqlCalls).not.toContain('BEGIN');
+    expect(sqlCalls).not.toContain('COMMIT');
+    expect(sqlCalls).not.toContain('ROLLBACK');
   });
 
   it('handles empty tables gracefully', async () => {
