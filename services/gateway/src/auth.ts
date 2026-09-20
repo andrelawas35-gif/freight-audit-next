@@ -10,6 +10,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getConfig } from './config';
+import { createFailureLimiter, type FailureLimiter } from './rate-limit';
 
 /** Extend Fastify request to carry authenticated clientId. */
 declare module 'fastify' {
@@ -19,6 +20,20 @@ declare module 'fastify' {
 }
 
 const AUTH_HEADER = 'x-api-key';
+
+let _limiter: FailureLimiter | null = null;
+function getLimiter(): FailureLimiter {
+  if (!_limiter) {
+    const { authMaxFailures, authFailureWindowMs } = getConfig();
+    _limiter = createFailureLimiter({ maxFailures: authMaxFailures, windowMs: authFailureWindowMs });
+  }
+  return _limiter;
+}
+
+/** Test hook: drop the cached limiter so the next request rebuilds it from config. */
+export function resetAuthLimiter(): void {
+  _limiter = null;
+}
 
 export function resolveClientId(apiKey: string): string | null {
   const { apiKeys } = getConfig();
@@ -33,9 +48,23 @@ export async function apiKeyAuth(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  const limiter = getLimiter();
+
+  // Blocked sources get 429 even with a valid key: answering differently would
+  // tell a guesser which key was right.
+  const retryAfter = limiter.retryAfterSeconds(request.ip);
+  if (retryAfter > 0) {
+    reply.header('retry-after', String(retryAfter)).status(429).send({
+      error: 'too_many_requests',
+      message: 'Too many failed authentication attempts',
+    });
+    return;
+  }
+
   const apiKey = request.headers[AUTH_HEADER];
 
   if (!apiKey || typeof apiKey !== 'string') {
+    limiter.recordFailure(request.ip);
     reply.status(401).send({
       error: 'unauthorized',
       message: 'Missing x-api-key header',
@@ -45,6 +74,7 @@ export async function apiKeyAuth(
 
   const clientId = resolveClientId(apiKey);
   if (!clientId) {
+    limiter.recordFailure(request.ip);
     reply.status(401).send({
       error: 'unauthorized',
       message: 'Invalid API key',

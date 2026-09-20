@@ -26,17 +26,38 @@ export interface GatewayConfig {
   bufferDrainIntervalMs: number;
   /** Buffer file path for durable decision log */
   bufferPath: string;
+  /** Failed x-api-key attempts allowed per source address per window (default 10) */
+  authMaxFailures: number;
+  /** Failed-attempt window in milliseconds (default 60_000) */
+  authFailureWindowMs: number;
+  /** Trust X-Forwarded-For for the source address. Set only behind a proxy you control. */
+  trustProxy: boolean;
 }
 
-function scanApiKeys(): Map<string, string> {
+/** Keys are the only tenant-identity source (D6), so reject guessable ones. */
+export const MIN_API_KEY_LENGTH = 32;
+
+/**
+ * Build the key → clientId map from GATEWAY_API_KEY_<clientId> env vars.
+ * Throws (so startup fails) if two clients share a key, which would silently
+ * route one client's traffic to the other, or if a key is too short to resist guessing.
+ * Error messages name the env var, never the key value.
+ */
+export function scanApiKeys(env: NodeJS.ProcessEnv = process.env): Map<string, string> {
   const keys = new Map<string, string>();
   const prefix = 'GATEWAY_API_KEY_';
-  for (const [envKey, envVal] of Object.entries(process.env)) {
+  for (const [envKey, envVal] of Object.entries(env)) {
     if (envKey.startsWith(prefix) && envVal) {
       const clientId = envKey.slice(prefix.length).toLowerCase();
-      if (clientId) {
-        keys.set(envVal, clientId);
+      if (!clientId) continue;
+      if (envVal.length < MIN_API_KEY_LENGTH) {
+        throw new Error(`${envKey} is too short: API keys must be at least ${MIN_API_KEY_LENGTH} characters`);
       }
+      const existing = keys.get(envVal);
+      if (existing !== undefined) {
+        throw new Error(`Duplicate gateway API key: clients "${existing}" and "${clientId}" share the same key`);
+      }
+      keys.set(envVal, clientId);
     }
   }
   return keys;
@@ -88,6 +109,9 @@ export function loadConfig(): GatewayConfig {
     cacheTtlMs: parseInt(process.env.GATEWAY_CACHE_TTL_MS ?? '60000', 10),
     bufferDrainIntervalMs: parseInt(process.env.GATEWAY_BUFFER_DRAIN_MS ?? '5000', 10),
     bufferPath: process.env.GATEWAY_BUFFER_PATH ?? '.gateway-buffer.jsonl',
+    authMaxFailures: parseInt(process.env.GATEWAY_AUTH_MAX_FAILURES ?? '10', 10),
+    authFailureWindowMs: parseInt(process.env.GATEWAY_AUTH_FAILURE_WINDOW_MS ?? '60000', 10),
+    trustProxy: process.env.GATEWAY_TRUST_PROXY === 'true',
   };
 
   return _config;

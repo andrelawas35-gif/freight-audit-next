@@ -22,6 +22,7 @@ async function main(): Promise<void> {
 
   const app = Fastify({
     logger: false, // We use structured JSON logging directly
+    trustProxy: config.trustProxy, // request.ip (auth rate limiting) honours X-Forwarded-For only when set
   });
 
   // ── Observability: correlation ID propagation ────────────────────────
@@ -123,7 +124,7 @@ async function main(): Promise<void> {
         msg: 'gateway started',
         ts: new Date().toISOString(),
         port: config.port,
-        apiKeyCount: config.apiKeys.size,
+        clientCount: config.apiKeys.size,
       }),
     );
   } catch (err) {
