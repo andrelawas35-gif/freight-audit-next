@@ -20,6 +20,11 @@
 */
 
 import { getSql } from '@/lib/db';
+import type {
+  NeonQueryFunctionInTransaction,
+  NeonQueryInTransaction,
+  NeonQueryPromise,
+} from '@neondatabase/serverless';
 
 /** Shared query interface — works for both neon HTTP driver and PoolClient. */
 export type SqlLike = {
@@ -442,48 +447,89 @@ export async function updateRecord(
   return rows[0];
 }
 
-// ── batch create (transactional) ─────────────────────────────
-// Wraps all inserts in a single transaction — if any insert fails, the
-// entire batch rolls back. Prevents orphaned partial-write states.
-// Pass { inTransaction: true } when the caller already holds a BEGIN.
+// ── batch insert query builder (ADR 0017) ─────────────────────
+// Returns unsent parameterized queries from a transaction handle.
+// Callers compose these into sql.transaction((txn) => [...]) for
+// genuine atomicity on the Neon HTTP driver (no session continuity).
+//
+// For callers that only need inserts (no sibling statement),
+// batchCreate() is a thin wrapper that builds the transaction.
+//
+// Options:
+//   onConflict: if set, appends ON CONFLICT ... DO NOTHING to each INSERT.
+//     Pass the raw SQL clause, e.g. '(subject_type, subject_id, "Detected by")'.
+export function insertQueries(
+  txn: NeonQueryFunctionInTransaction<boolean, boolean>,
+  tableName: TableName,
+  recordsData: Record<string, unknown>[],
+  opts?: { onConflict?: string },
+): NeonQueryInTransaction[] {
+  if (recordsData.length === 0) return [];
+
+  const conflictClause = opts?.onConflict
+    ? ` ON CONFLICT ${opts.onConflict} DO NOTHING`
+    : '';
+
+  const queries: NeonQueryInTransaction[] = [];
+  for (const fields of recordsData) {
+    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) {
+      queries.push(
+        txn.query(
+          `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES${conflictClause} RETURNING *`,
+          [],
+        ) as NeonQueryInTransaction,
+      );
+    } else {
+      const cols = entries.map(([k]) => quoteIdent(k)).join(', ');
+      const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
+      const values = entries.map(([, v]) => v);
+      queries.push(
+        txn.query(
+          `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${placeholders})${conflictClause} RETURNING *`,
+          values,
+        ) as NeonQueryInTransaction,
+      );
+    }
+  }
+  return queries;
+}
+
+/**
+ * Batch-create records in a single transaction.
+ * Thin wrapper around insertQueries + sql.transaction().
+ *
+ * For callers that need a sibling statement (UPDATE, etc.) in the
+ * same transaction, use insertQueries() directly with sql.transaction():
+ *
+ *   await sql.transaction((txn) => [
+ *     ...insertQueries(txn, 'Audit Results', records),
+ *     txn.query(updateSql, updateParams),
+ *   ]);
+ */
 export async function batchCreate(
   tableName: TableName,
   recordsData: Record<string, unknown>[],
-  opts?: { inTransaction?: boolean }
 ): Promise<Row[]> {
   if (recordsData.length === 0) return [];
 
   const sql = getSql();
-  const results: Row[] = [];
-  const ownTx = !opts?.inTransaction;
+  const results = await sql.transaction((txn) =>
+    insertQueries(txn, tableName, recordsData),
+  );
 
-  if (ownTx) await sql.query('BEGIN');
-  try {
-    for (const fields of recordsData) {
-      const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-      if (entries.length === 0) {
-        const rows = (await sql.query(
-          `INSERT INTO ${quoteIdent(tableName)} DEFAULT VALUES RETURNING *`, []
-        )) as Row[];
-        results.push(rows[0]);
-      } else {
-        const cols = entries.map(([k]) => quoteIdent(k)).join(', ');
-        const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
-        const values = entries.map(([, v]) => v);
-        const rows = (await sql.query(
-          `INSERT INTO ${quoteIdent(tableName)} (${cols}) VALUES (${placeholders}) RETURNING *`,
-          values
-        )) as Row[];
-        results.push(rows[0]);
+  // sql.transaction() with RETURNING returns an array of result arrays.
+  // Each inner array contains the rows returned by one statement.
+  // Flatten into a single Row[].
+  const flat: Row[] = [];
+  for (const resultSet of results) {
+    if (Array.isArray(resultSet)) {
+      for (const row of resultSet as Record<string, unknown>[]) {
+        flat.push(row as Row);
       }
     }
-    if (ownTx) await sql.query('COMMIT');
-  } catch (err) {
-    if (ownTx) await sql.query('ROLLBACK');
-    throw err;
   }
-
-  return results;
+  return flat;
 }
 
 // ── safe field-level lookup (bypasses formula translator) ────

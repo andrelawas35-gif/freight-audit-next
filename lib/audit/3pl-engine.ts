@@ -7,7 +7,7 @@
 */
 
 import { getSql } from '@/lib/db';
-import { batchCreate } from '@/lib/db/records';
+import { insertQueries } from '@/lib/db/records';
 import { loadRulebook, createResolver } from './rulebook';
 import { recordRun } from './runs';
 import { log } from '@/lib/logger';
@@ -69,44 +69,54 @@ export async function runThreePLAudit(opts: {
     // Findings + mark-audited must be atomic — a crash between them would
     // leave lines marked pending with findings already written (double-audit)
     // or findings missing with lines marked audited (lost findings).
-    // Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
-    // Verified working on pinned @neondatabase/serverless version.
-    // TODO: migrate to sql.transaction() when batchCreate is refactored.
-    await sql.query('BEGIN');
-    try {
+    // sql.transaction() is the ONLY atomicity mechanism on the Neon HTTP
+    // driver. ON CONFLICT DO NOTHING closes the concurrent-write race.
+    const conflictTarget = '(subject_type, subject_id, "Detected by")';
+
+    await sql.transaction((txn) => {
+      const queries: import('@neondatabase/serverless').NeonQueryInTransaction[] = [];
+
       if (findings.length) {
         const auditedAt = new Date().toISOString();
-        await batchCreate('Audit Results', findings.map((finding) => {
-          const gateway = defaultGatewayTagForRule(finding.ruleCode, finding.variance);
-          return {
-            'Outcome': 'FLAGGED',
-            'Detected by': finding.ruleCode,
-            'Billed amount': finding.billed,
-            'Expected amount': finding.expected,
-            'Variance': finding.variance,
-            'Notes': finding.notes,
-            'Audited at': auditedAt,
-            'Carrier SCAC': finding.scac ?? undefined,
-            'Client': finding.clientId ? [finding.clientId] : undefined,
-            'Invoice number': finding.orderId ?? undefined,
-            'subject_type': 'tpl',
-            'subject_id': finding.lineId,
-            ...gatewayTagToFields(gateway),
-          };
-        }), { inTransaction: true });
+        queries.push(
+          ...insertQueries(
+            txn,
+            'Audit Results',
+            findings.map((finding) => {
+              const gateway = defaultGatewayTagForRule(finding.ruleCode, finding.variance);
+              return {
+                'Outcome': 'FLAGGED',
+                'Detected by': finding.ruleCode,
+                'Billed amount': finding.billed,
+                'Expected amount': finding.expected,
+                'Variance': finding.variance,
+                'Notes': finding.notes,
+                'Audited at': auditedAt,
+                'Carrier SCAC': finding.scac ?? undefined,
+                'Client': finding.clientId ? [finding.clientId] : undefined,
+                client_id: finding.clientId ?? undefined,
+                'Invoice number': finding.orderId ?? undefined,
+                'subject_type': 'tpl',
+                'subject_id': finding.lineId,
+                ...gatewayTagToFields(gateway),
+              };
+            }),
+            { onConflict: conflictTarget },
+          ),
+        );
       }
 
       if (lineIds.length) {
-        await sql.query(
-          `UPDATE ${table} SET audit_status='audited' WHERE id = ANY($1::text[])`,
-          [lineIds]
+        queries.push(
+          txn.query(
+            `UPDATE ${table} SET audit_status='audited' WHERE id = ANY($1::text[])`,
+            [lineIds],
+          ),
         );
       }
-      await sql.query('COMMIT');
-    } catch (err) {
-      await sql.query('ROLLBACK');
-      throw err;
-    }
+
+      return queries;
+    });
 
     linesChecked += lineIds.length;
     findingsCreated += findings.length;

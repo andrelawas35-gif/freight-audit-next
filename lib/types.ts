@@ -58,6 +58,7 @@ export type Invoice = {
   'Invoice date'?: string;
   'Payment due date'?: string;
   'Clients'?: string[];
+  client_id?: string;
 };
 
 export type Shipment = {

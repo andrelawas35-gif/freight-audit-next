@@ -9,6 +9,7 @@ export {
   createRecord,
   updateRecord,
   batchCreate,
+  insertQueries,
   fetchAllRecords,
   softDelete,
   restoreRecord,

@@ -31,7 +31,7 @@ INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECO
 
 1. **Audit completeness** - engines use keyset pagination (`fetchAllRecords`), never bounded `fetchRecords`. Financial processing must be complete or fail visibly.
 2. **Run isolation** - `created_at <= run_started_at` cutoff prevents mid-run ingestion from being included. Sourced from `audit_jobs.started_at`.
-3. **Transaction safety** - all financial write paths use `sql.transaction([...])` (Neon's documented transaction API). `batchCreate({ inTransaction: true })` skips nested `BEGIN`. Raw `sql.query('BEGIN'/'COMMIT')` is deprecated — do not use it for multi-statement atomicity.
+3. **Transaction safety** - all financial write paths use `sql.transaction([...])` (Neon's documented transaction API). Compose a multi-statement write (e.g. findings insert + sibling `UPDATE`) with `insertQueries(txn, ...)` inside one `sql.transaction((txn) => [...])`; `batchCreate` is a thin wrapper for insert-only batches. Audit-findings inserts add `ON CONFLICT (subject_type, subject_id, "Detected by") DO NOTHING` (migration 0027, ADR 0017). Raw `sql.query('BEGIN'/'COMMIT')` is deprecated — do not use it for multi-statement atomicity.
 4. **AI is suggest-only** - dispute parser and data clerk propose; humans confirm. Never auto-apply.
 5. **Rulebook precedence** - contract (score 30) -> carrier (20) -> global (10). Service-specific +5. Do not change without business review.
 6. **Client scoping** - portal queries always filter by `session.user.clientId`. No client selector exposed.

@@ -12,7 +12,7 @@ import {
   fetchRecordsByIds,
   fetchRecordsByLinkedIds,
   updateRecord,
-  batchCreate,
+  insertQueries,
 } from '@/lib/db/records';
 import type { Invoice, Shipment } from '@/lib/types';
 import type { Finding } from './types';
@@ -94,6 +94,9 @@ export async function runAudit(options: {
   const errors: string[] = [];
 
   for (const invoice of invoices) {
+    // Perf-only skip: if we already have a finding for every rule on this
+    // invoice we can skip re-running. Correctness lives in the UNIQUE
+    // constraint + ON CONFLICT DO NOTHING (ADR 0017 / migration 0027).
     if (alreadyAudited.has(invoice.id)) continue;
 
     const shipmentId = invoice['Shipment']?.[0];
@@ -111,45 +114,48 @@ export async function runAudit(options: {
     }
   }
 
-  // 6. Write findings + update client timestamp atomically.
-  //    Uses sql.query('BEGIN') / sql.query('COMMIT') on the Neon HTTP driver.
-  //    Verified working on pinned @neondatabase/serverless version (session pinning
-  //    across queries). batchCreate({ inTransaction: true }) skips its own BEGIN.
-  //    TODO: migrate to sql.transaction() when batchCreate is refactored to
-  //    build synchronous query arrays (Wave 2 follow-up, BACKLOG §E4).
+  // 6. Write findings + update client timestamp atomically (ADR 0017).
+  //    sql.transaction() is the ONLY atomicity mechanism on the Neon HTTP
+  //    driver — each sql`...` is an independent request with no session
+  //    continuity. Raw BEGIN/COMMIT is never atomic.
+  //    ON CONFLICT DO NOTHING closes the concurrent-write race (suite 2).
   if (!dryRun && findings.length > 0) {
     const sql = getSql();
-    await sql.query('BEGIN');
-    try {
-      const auditedAt = new Date().toISOString();
-      const records = findings.map((f) => {
-        const gateway = f.gateway ?? defaultGatewayTagForRule(f.ruleCode, f.variance);
-        return {
-          'Invoice': [f.invoiceId],
-          'Outcome': f.outcome,
-          'Billed amount': f.billedAmount,
-          'Expected amount': f.expectedAmount,
-          'Variance': f.variance,
-          'Notes': f.notes,
-          'Audited at': auditedAt,
-          'Detected by': f.ruleCode,
-          'subject_type': 'parcel',
-          'subject_id': f.invoiceId,
-          ...gatewayTagToFields(gateway),
-        };
-      });
-      await batchCreate('Audit Results', records, { inTransaction: true });
+    const auditedAt = new Date().toISOString();
 
-      if (clientId) {
-        await updateRecord('Clients', clientId, {
-          'Last audit run': new Date().toISOString(),
-        });
-      }
-      await sql.query('COMMIT');
-    } catch (err) {
-      await sql.query('ROLLBACK');
-      throw err;
-    }
+    // Build invoice→client_id lookup (required by chk_audit_results_client_id)
+    const invoiceClientMap = new Map(invoices.map((inv) => [inv.id, inv.client_id ?? inv['Clients']?.[0] ?? clientId]));
+
+    const records = findings.map((f) => {
+      const gateway = f.gateway ?? defaultGatewayTagForRule(f.ruleCode, f.variance);
+      return {
+        'Invoice': [f.invoiceId],
+        'Outcome': f.outcome,
+        'Billed amount': f.billedAmount,
+        'Expected amount': f.expectedAmount,
+        'Variance': f.variance,
+        'Notes': f.notes,
+        'Audited at': auditedAt,
+        'Detected by': f.ruleCode,
+        'subject_type': 'parcel',
+        'subject_id': f.invoiceId,
+        client_id: invoiceClientMap.get(f.invoiceId) ?? clientId ?? null,
+        ...gatewayTagToFields(gateway),
+      };
+    });
+
+    const conflictTarget = '(subject_type, subject_id, "Detected by")';
+    await sql.transaction((txn) => [
+      ...insertQueries(txn, 'Audit Results', records, { onConflict: conflictTarget }),
+      ...(clientId
+        ? [
+            txn.query(
+              `UPDATE "Clients" SET "Last audit run" = $1 WHERE id = $2`,
+              [new Date().toISOString(), clientId],
+            ),
+          ]
+        : []),
+    ]);
   } else if (!dryRun && clientId) {
     await updateRecord('Clients', clientId, {
       'Last audit run': new Date().toISOString(),

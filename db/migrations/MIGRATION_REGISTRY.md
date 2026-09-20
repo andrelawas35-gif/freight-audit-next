@@ -1,7 +1,7 @@
 # Migration Number Registry
 
 > **Owner**: Controller (C0) — formerly E1
-> **Updated**: 2026-06-27
+> **Updated**: 2026-09-19
 > 
 > This registry is the single source of truth for migration number allocation.
 > All migration-writing tracks (E3, E4, E5) MUST claim numbers here before writing SQL.
@@ -30,9 +30,17 @@
 | 0019 | E5 | applied | staff_reviewed column (ADR 0015) |
 | 0020 | E5 | applied | clause_hash index (btree→hash dedup) |
 | 0021 | E5 | reserved | T3 batch index / pipeline schema |
-| **0022** | **E4** | **available** | **Next FK / schema integrity migration** |
-| **0023** | **E5** | **available** | **Next pipeline fix migration** |
-| **0024** | **E6** | **available** | **CI / stack hardening (if migration needed)** |
+| 0022 | E4 | applied | gateway_active_flag + t4_status_vocabulary |
+| 0023 | E4 | applied | converge_insurance_rules |
+| 0024 | E6 | applied | vision_extraction_columns |
+| 0025 | E5 | applied | golden_examples_for_few_shot |
+| 0026 | H1 | pending | subject_type + subject_id columns (Wave 0 keystone, no UNIQUE) — in repo; not yet applied to production |
+| **0027** | **H4** | **pending** | **UNIQUE(subject_type, subject_id, "Detected by") + dedup (Wave 3) — in repo; not yet applied to production. Its dedup `DELETE` SET-NULLs `audit_result_id` on policy_backtest_results, gateway_behavioral_tags, shipment_insurance_audit_results (0015 FKs): run a read-only duplicate/child-reference count against production before applying.** |
+| **0028** | **C0 (keystone)** | **applied** | **vision_attempt_records — append-only extraction attempt history (ADR 0020, Wave 0)** |
+| **0029** | **V2** | **reserved** | **vision_exception_dedup (ADR 0020, Wave 2)** |
+| **0030** | **V1** | **reserved** | **rasterizer_config (ADR 0018, Wave 4, optional)** |
+| **0031** | **—** | **reserved** | **degradation-alert state (ADR 0020, Wave 2)** |
+| **0032** | **—** | **available** | **Next migration** |
 
 ## Allocation Protocol
 
