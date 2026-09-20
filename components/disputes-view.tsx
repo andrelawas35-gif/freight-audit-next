@@ -21,9 +21,9 @@ import { fmtUSD, fmtDate, fmtDateFull, STAGES } from '@/lib/format';
 import {
   RuleTag, ruleName, StagePill, DeadlineChip, CarrierMark,
   Btn, Glyph, Segmented, FilterChip, FilterPopover, AuditTrail,
-  type TrailEvent,
+  TableFooter, type TrailEvent,
 } from '@/components/ui/primitives';
-import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/disputes/actions';
+import { advanceStage, addDisputeNote, markCarrierResponded } from '@/app/(console)/console/disputes/actions';
 
 export type DisputeRow = {
   id: string;
@@ -46,7 +46,7 @@ export type DisputeRow = {
   notes: string;
 };
 
-export function DisputesView({ initialRows, loadError }: { initialRows: DisputeRow[]; loadError: string | null }) {
+export function DisputesView({ initialRows, loadError, hasMoreRows = false }: { initialRows: DisputeRow[]; loadError: string | null; hasMoreRows?: boolean }) {
   const [rows, setRows] = useState(initialRows);
   const [stages, setStages] = useState<string[]>([]);
   const [carriers, setCarriers] = useState<string[]>([]);
@@ -118,7 +118,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
 
   // ── write actions ───────────────────────────────────────────
   const handleAdvance = (d: DisputeRow) => {
-    const idx = STAGES.indexOf(d.stage);
+    const idx = STAGES.indexOf(d.stage as typeof STAGES[number]);
     if (idx === -1 || idx >= STAGES.length - 1) return;
     const next = STAGES[idx + 1];
     const today = new Date().toISOString().slice(0, 10);
@@ -126,10 +126,10 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
     setRows(prev => prev.map(r => {
       if (r.id !== d.id) return r;
       const updated: DisputeRow = { ...r, stage: next };
-      if (next === 'Submitted') updated.filed = today;
-      if (next === 'Won' || next === 'Closed') {
+      if (next === 'filed') updated.filed = today;
+      if (next === 'won' || next === 'closed') {
         updated.resolved = today;
-        if (next === 'Won' && !updated.recovery) updated.recovery = updated.amount;
+        if (next === 'won' && !updated.recovery) updated.recovery = updated.amount;
       }
       updated.events = [...r.events, eventForStage(next, today)];
       return updated;
@@ -144,6 +144,31 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
     startTransition(() => { markCarrierResponded(d.id); });
   };
 
+  // NEW: Handle Adding Notes optimistically
+  const handleAddNote = (d: DisputeRow, noteText: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    
+    setRows(prev => prev.map(r => {
+      if (r.id !== d.id) return r;
+      // Append to notes string and add to audit trail instantly
+      return { 
+        ...r, 
+        notes: r.notes ? `${r.notes}\n\n${noteText}` : noteText,
+        events: [...r.events, { kind: 'escalated', date: today, actor: 'Team', note: noteText }] // Using 'escalated' or similar generic kind for notes
+      };
+    }));
+    
+    if (sel?.id === d.id) {
+        setSel(prev => prev ? { 
+            ...prev, 
+            notes: prev.notes ? `${prev.notes}\n\n${noteText}` : noteText,
+            events: [...prev.events, { kind: 'escalated', date: today, actor: 'Team', note: noteText }]
+        } : prev);
+    }
+
+    startTransition(() => { addDisputeNote(d.id, noteText); });
+  };
+
   // ── filter helpers ──────────────────────────────────────────
   const toggleArr = (arr: string[], setter: (v: string[]) => void) => (v: string) =>
     setter(arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
@@ -156,7 +181,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Couldn't load disputes</div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--hot-ink)' }}>{loadError}</div>
-        <div style={{ fontSize: 12, marginTop: 12 }}>Check your AIRTABLE_PAT and AIRTABLE_BASE_ID in .env.local</div>
+        <div style={{ fontSize: 12, marginTop: 12 }}>Check DATABASE_URL and database connectivity, then reload the page.</div>
       </div>
     );
   }
@@ -191,6 +216,11 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
         <Segmented value={sort} onChange={setSort} options={[
           { value: 'opened', label: 'Newest' }, { value: 'amount', label: '$ Amount' }, { value: 'silent', label: 'Silent' },
         ]} />
+        <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
+          {filtered.length !== rows.length
+            ? `${filtered.length} of ${rows.length}`
+            : `${rows.length}`} disputes
+        </span>
       </div>
 
       {/* Active filter chips */}
@@ -234,7 +264,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
                     ? <StagePill stage={g.key} full />
                     : <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-2)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{g.label}</span>}
                   <span className="mono tnum" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>
-                    {g.items.length} · {fmtUSD(g.items.reduce((a, b) => a + (b.stage === 'Won' ? (b.recovery || 0) : b.amount), 0))}
+                    {g.items.length} · {fmtUSD(g.items.reduce((a, b) => a + (b.stage === 'won' ? (b.recovery || 0) : b.amount), 0))}
                   </span>
                 </div>
               )}
@@ -245,12 +275,18 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
           ))}
 
           {flat.length === 0 && <div style={{ padding: 38, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>No disputes match these filters.</div>}
+          <TableFooter showing={filtered.length} total={rows.length} label="disputes" hasMore={hasMoreRows} />
         </div>
 
         {/* DETAIL */}
-        <div style={{ overflow: 'hidden' }}>
-          <DisputeDetail d={sel} onAdvance={handleAdvance} onMarkResponded={handleMarkResponded} />
-        </div>
+          <div style={{ overflow: 'hidden' }}>
+            <DisputeDetail 
+              d={sel} 
+              onAdvance={handleAdvance} 
+              onMarkResponded={handleMarkResponded} 
+              onAddNote={handleAddNote} // <-- ADD THIS LINE
+            />
+          </div>
       </div>
 
       {isPending && (
@@ -265,7 +301,7 @@ export function DisputesView({ initialRows, loadError }: { initialRows: DisputeR
 
 // ── Single row ────────────────────────────────────────────────
 function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean; onClick: () => void }) {
-  const isWon = d.stage === 'Won';
+  const isWon = d.stage === 'won';
   return (
     <div data-rid={d.id} onClick={onClick} style={{
       display: 'grid', gridTemplateColumns: '46px 1fr 64px 110px 60px 70px 80px', gap: 8, alignItems: 'center',
@@ -283,7 +319,7 @@ function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean
       <CarrierMark scac={d.carrier} withName />
       <StagePill stage={d.stage} />
       <span className="mono tnum" style={{ fontSize: 10.5, color: d.silentDays >= 7 ? 'var(--amber-ink)' : 'var(--ink-3)', fontWeight: d.silentDays >= 7 ? 700 : 400 }}>
-        {d.silentDays > 0 && !['Won', 'Closed'].includes(d.stage) ? d.silentDays + 'd' : '—'}
+        {d.silentDays > 0 && !['won', 'closed'].includes(d.stage) ? d.silentDays + 'd' : '—'}
       </span>
       <span className="mono tnum" style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: isWon ? 'var(--green-ink)' : 'var(--ink)' }}>
         {fmtUSD(isWon ? (d.recovery || 0) : d.amount, true)}
@@ -293,11 +329,17 @@ function DisputeRowItem({ d, active, onClick }: { d: DisputeRow; active: boolean
 }
 
 // ── Detail pane ───────────────────────────────────────────────
-function DisputeDetail({ d, onAdvance, onMarkResponded }: {
+function DisputeDetail({ d, onAdvance, onMarkResponded, onAddNote }: {
   d: DisputeRow | null;
   onAdvance: (d: DisputeRow) => void;
   onMarkResponded: (d: DisputeRow) => void;
+  onAddNote: (d: DisputeRow, note: string) => void;
+
+  
 }) {
+
+  const [noteInput, setNoteInput] = useState('');
+
   if (!d) return (
     <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: 'var(--ink-faint)', fontSize: 12 }}>
       <div style={{ textAlign: 'center' }}>
@@ -310,9 +352,9 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
     </div>
   );
 
-  const isWon = d.stage === 'Won';
-  const isClosed = d.stage === 'Closed';
-  const isSilent = d.silentDays >= 7 && !['Won', 'Closed'].includes(d.stage);
+  const isWon = d.stage === 'won';
+  const isClosed = d.stage === 'closed';
+  const isSilent = d.silentDays >= 7 && !['won', 'closed'].includes(d.stage);
 
   const Row = ({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--line-2)' }}>
@@ -322,10 +364,16 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
   );
 
   const nextStageLabel = (() => {
-    const idx = STAGES.indexOf(d.stage);
+    const idx = STAGES.indexOf(d.stage as typeof STAGES[number]);
     if (idx === -1 || idx >= STAGES.length - 1) return null;
     return STAGES[idx + 1];
   })();
+
+  const handleSubmitNote = () => {
+    if (!noteInput.trim()) return;
+    onAddNote(d, noteInput.trim());
+    setNoteInput('');
+  };
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -372,7 +420,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
         <Row k="Owner" v={d.owner} />
         {d.opened && <Row k="Opened" v={fmtDateFull(d.opened)} mono />}
         {d.filed && <Row k="Filed" v={fmtDateFull(d.filed)} mono />}
-        {d.resolved && <Row k={isWon ? 'Won' : 'Resolved'} v={fmtDateFull(d.resolved)} mono />}
+        {d.resolved && <Row k={isWon ? 'won' : 'Resolved'} v={fmtDateFull(d.resolved)} mono />}
 
         {d.notes && (
           <>
@@ -389,7 +437,28 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
         <AuditTrail events={d.events} />
       </div>
 
-      {!['Won', 'Closed'].includes(d.stage) && (
+      {/* NEW: Quick Note Input */}
+      {!['won', 'closed'].includes(d.stage) && (
+        <div style={{ marginTop: 24 }}>
+          <textarea 
+            placeholder="Add an internal note or carrier response update..."
+            value={noteInput}
+            onChange={(e) => setNoteInput(e.target.value)}
+            style={{
+              width: '100%', height: 60, padding: '8px 10px', fontSize: 12, resize: 'none',
+              background: 'var(--canvas)', border: '1px solid var(--line)', borderRadius: 6,
+              fontFamily: 'inherit', color: 'var(--ink)'
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+            <Btn size="sm" onClick={handleSubmitNote} disabled={!noteInput.trim()}>
+              Save Note
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {!['won', 'closed'].includes(d.stage) && (
         <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', gap: 7 }}>
           {isSilent && (
             <Btn variant="amber" size="md" onClick={() => onMarkResponded(d)}>
@@ -399,7 +468,7 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
           <div style={{ flex: 1 }} />
           {nextStageLabel && (
             <Btn variant="primary" size="md" onClick={() => onAdvance(d)}>
-              {nextStageLabel === 'Won' ? 'Mark won →' : `Advance to ${nextStageLabel} →`}
+              {nextStageLabel === 'won' ? 'Mark won →' : `Advance to ${nextStageLabel} →`}
             </Btn>
           )}
         </div>
@@ -411,11 +480,13 @@ function DisputeDetail({ d, onAdvance, onMarkResponded }: {
 // ── helper: build a trail event for a newly-advanced stage ──────
 function eventForStage(stage: string, date: string): TrailEvent {
   switch (stage) {
-    case 'In review': return { kind: 'reviewed',  date, actor: 'Team', note: 'Marked in review.' };
-    case 'Submitted': return { kind: 'filed',     date, actor: 'Team', note: 'Filed with carrier.' };
-    case 'Escalated': return { kind: 'escalated', date, actor: 'Team', note: 'Escalated for follow-up.' };
-    case 'Won':       return { kind: 'won',       date, actor: 'Carrier', note: 'Marked won.' };
-    case 'Closed':    return { kind: 'closed',    date, actor: 'Team', note: 'Closed.' };
-    default:          return { kind: 'opened',    date, actor: 'Team', note: stage };
+    case 'pending_review': return { kind: 'reviewed',  date, actor: 'Team', note: 'Marked in review.' };
+    case 'filed':          return { kind: 'filed',     date, actor: 'Team', note: 'Filed with carrier.' };
+    case 'appealed':       return { kind: 'escalated', date, actor: 'Team', note: 'Escalated for follow-up.' };
+    case 'won':            return { kind: 'won',       date, actor: 'Carrier', note: 'Marked won.' };
+    case 'closed':         return { kind: 'closed',    date, actor: 'Team', note: 'Closed.' };
+    default:               return { kind: 'opened',    date, actor: 'Team', note: stage };
   }
 }
+
+

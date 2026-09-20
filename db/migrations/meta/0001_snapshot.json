@@ -1,0 +1,2024 @@
+{
+  "id": "5445b0c6-8603-4302-82fc-213abee0317a",
+  "prevId": "56cdacde-31a4-432d-97bd-17245e1ea15b",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.app_users": {
+      "name": "app_users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'usr' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'client'"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "app_users_email_key": {
+          "name": "app_users_email_key",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_app_users_email": {
+          "name": "idx_app_users_email",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_jobs": {
+      "name": "audit_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'job' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "job_type": {
+          "name": "job_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'parcel'"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dry_run": {
+          "name": "dry_run",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "triggered_by": {
+          "name": "triggered_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cycle": {
+          "name": "cycle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_audit_jobs_status": {
+          "name": "idx_audit_jobs_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "queued_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_audit_jobs_client": {
+          "name": "idx_audit_jobs_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Audit Results": {
+      "name": "Audit Results",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "Invoice": {
+          "name": "Invoice",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Invoice line": {
+          "name": "Invoice line",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Audit Rules": {
+          "name": "Audit Rules",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Outcome": {
+          "name": "Outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Expected amount": {
+          "name": "Expected amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Billed amount": {
+          "name": "Billed amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Variance": {
+          "name": "Variance",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Notes": {
+          "name": "Notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Audited at": {
+          "name": "Audited at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Detected by": {
+          "name": "Detected by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Disputes": {
+          "name": "Disputes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Review status": {
+          "name": "Review status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Client": {
+          "name": "Client",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier SCAC": {
+          "name": "Carrier SCAC",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier (display)": {
+          "name": "Carrier (display)",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier": {
+          "name": "Carrier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Invoice number": {
+          "name": "Invoice number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Tracking number": {
+          "name": "Tracking number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Recoverable amount": {
+          "name": "Recoverable amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Recover amount": {
+          "name": "Recover amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Rule name": {
+          "name": "Rule name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Rule": {
+          "name": "Rule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_audit_outcome": {
+          "name": "idx_audit_outcome",
+          "columns": [
+            {
+              "expression": "Outcome",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_runs": {
+      "name": "audit_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'run' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_name": {
+          "name": "client_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dry_run": {
+          "name": "dry_run",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "invoices_checked": {
+          "name": "invoices_checked",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "findings_created": {
+          "name": "findings_created",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_variance": {
+          "name": "total_variance",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "errors": {
+          "name": "errors",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "triggered_by": {
+          "name": "triggered_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_audit_runs_started": {
+          "name": "idx_audit_runs_started",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Carrier Codes": {
+      "name": "Carrier Codes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "SCAC code": {
+          "name": "SCAC code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier SCAC": {
+          "name": "Carrier SCAC",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Filing window days": {
+          "name": "Filing window days",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Carriers": {
+      "name": "Carriers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "SCAC": {
+          "name": "SCAC",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier name": {
+          "name": "Carrier name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier type": {
+          "name": "Carrier type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Contact email": {
+          "name": "Contact email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_carrier_scac": {
+          "name": "idx_carrier_scac",
+          "columns": [
+            {
+              "expression": "SCAC",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Clients": {
+      "name": "Clients",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "Company name": {
+          "name": "Company name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Contract active": {
+          "name": "Contract active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Gain share pct": {
+          "name": "Gain share pct",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Min invoice threshold": {
+          "name": "Min invoice threshold",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Last audit run": {
+          "name": "Last audit run",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dispute_outcomes": {
+      "name": "dispute_outcomes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'do'  || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "dispute_id": {
+          "name": "dispute_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recovery_amount": {
+          "name": "recovery_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_text": {
+          "name": "source_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_by": {
+          "name": "applied_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rule_code": {
+          "name": "rule_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "carrier_scac": {
+          "name": "carrier_scac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disputed_amount": {
+          "name": "disputed_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_dispute_outcomes_dispute": {
+          "name": "idx_dispute_outcomes_dispute",
+          "columns": [
+            {
+              "expression": "dispute_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Disputes": {
+      "name": "Disputes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "Dispute ID": {
+          "name": "Dispute ID",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Invoice": {
+          "name": "Invoice",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Audit result": {
+          "name": "Audit result",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Client": {
+          "name": "Client",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Audit rule": {
+          "name": "Audit rule",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier (display)": {
+          "name": "Carrier (display)",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier": {
+          "name": "Carrier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Tracking number": {
+          "name": "Tracking number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Disputed amount": {
+          "name": "Disputed amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Status": {
+          "name": "Status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Opened date": {
+          "name": "Opened date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Filed date": {
+          "name": "Filed date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier response date": {
+          "name": "Carrier response date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Escalation date": {
+          "name": "Escalation date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Escalation reason": {
+          "name": "Escalation reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Date resolved": {
+          "name": "Date resolved",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Recovery amount": {
+          "name": "Recovery amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Resolution notes": {
+          "name": "Resolution notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_dispute_status": {
+          "name": "idx_dispute_status",
+          "columns": [
+            {
+              "expression": "Status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ingestion_exceptions": {
+      "name": "ingestion_exceptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'exc' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "mapping_type": {
+          "name": "mapping_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "carrier_scac": {
+          "name": "carrier_scac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_code": {
+          "name": "raw_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sample": {
+          "name": "sample",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suggested_code": {
+          "name": "suggested_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurrences": {
+          "name": "occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "learned_mapping_id": {
+          "name": "learned_mapping_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "suggested_confidence": {
+          "name": "suggested_confidence",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_exc_status": {
+          "name": "idx_exc_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_exc_dedup": {
+          "name": "idx_exc_dedup",
+          "columns": [
+            {
+              "expression": "mapping_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"carrier_scac\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "upper(\"raw_code\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Invoices": {
+      "name": "Invoices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "Invoice number": {
+          "name": "Invoice number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Status": {
+          "name": "Status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Amount billed": {
+          "name": "Amount billed",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Amount approved": {
+          "name": "Amount approved",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Amount disputed": {
+          "name": "Amount disputed",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Shipment": {
+          "name": "Shipment",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier": {
+          "name": "Carrier",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Invoice date": {
+          "name": "Invoice date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Payment due date": {
+          "name": "Payment due date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Clients": {
+          "name": "Clients",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_invoice_number": {
+          "name": "idx_invoice_number",
+          "columns": [
+            {
+              "expression": "Invoice number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.learned_mappings": {
+      "name": "learned_mappings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'lm'  || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "mapping_type": {
+          "name": "mapping_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "carrier_scac": {
+          "name": "carrier_scac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_code": {
+          "name": "raw_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "standard_code": {
+          "name": "standard_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author": {
+          "name": "author",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'HUMAN_ANALYST'"
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_learned_mapping": {
+          "name": "uq_learned_mapping",
+          "columns": [
+            {
+              "expression": "mapping_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"carrier_scac\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "upper(\"raw_code\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rulebook": {
+      "name": "rulebook",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rb'  || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "carrier_scac": {
+          "name": "carrier_scac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "service_level": {
+          "name": "service_level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rule_key": {
+          "name": "rule_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "num_value": {
+          "name": "num_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bool_value": {
+          "name": "bool_value",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text_value": {
+          "name": "text_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effective_from": {
+          "name": "effective_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effective_to": {
+          "name": "effective_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "clause_ref": {
+          "name": "clause_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_rulebook_key": {
+          "name": "idx_rulebook_key",
+          "columns": [
+            {
+              "expression": "rule_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_rulebook_scope": {
+          "name": "uq_rulebook_scope",
+          "columns": [
+            {
+              "expression": "scope",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"client_id\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"carrier_scac\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"service_level\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rule_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "COALESCE(\"effective_from\", '1900-01-01'::date)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.Shipments": {
+      "name": "Shipments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'rec' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "PRO number": {
+          "name": "PRO number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Tracking number": {
+          "name": "Tracking number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Actual L": {
+          "name": "Actual L",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Actual W": {
+          "name": "Actual W",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Actual H": {
+          "name": "Actual H",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Actual weight lbs": {
+          "name": "Actual weight lbs",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Ship date": {
+          "name": "Ship date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Delivery date": {
+          "name": "Delivery date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Service level": {
+          "name": "Service level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Carrier": {
+          "name": "Carrier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Destination zip": {
+          "name": "Destination zip",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "Address classification": {
+          "name": "Address classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_shipment_pro": {
+          "name": "idx_shipment_pro",
+          "columns": [
+            {
+              "expression": "PRO number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_shipment_tracking": {
+          "name": "idx_shipment_tracking",
+          "columns": [
+            {
+              "expression": "Tracking number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tpl_fulfillment_lines": {
+      "name": "tpl_fulfillment_lines",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'tplf' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "carrier_scac": {
+          "name": "carrier_scac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invoice_cycle": {
+          "name": "invoice_cycle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wms_shipment_id": {
+          "name": "wms_shipment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tracking_number": {
+          "name": "tracking_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "units_picked": {
+          "name": "units_picked",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_pick_fee": {
+          "name": "base_pick_fee",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "additional_pick_fee": {
+          "name": "additional_pick_fee",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "packaging_fee": {
+          "name": "packaging_fee",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billed_dims": {
+          "name": "billed_dims",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billed_weight": {
+          "name": "billed_weight",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_freight": {
+          "name": "base_freight",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fuel_surcharge": {
+          "name": "fuel_surcharge",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accessorials": {
+          "name": "accessorials",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_billed": {
+          "name": "total_billed",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match_status": {
+          "name": "match_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unmatched'"
+        },
+        "matched_shipment_id": {
+          "name": "matched_shipment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "carrier_pro": {
+          "name": "carrier_pro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "base_carrier_cost": {
+          "name": "base_carrier_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "audit_status": {
+          "name": "audit_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        }
+      },
+      "indexes": {
+        "idx_tplf_audit": {
+          "name": "idx_tplf_audit",
+          "columns": [
+            {
+              "expression": "audit_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_tplf_cycle": {
+          "name": "idx_tplf_cycle",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "invoice_cycle",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_tplf_match": {
+          "name": "idx_tplf_match",
+          "columns": [
+            {
+              "expression": "match_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.tpl_storage_lines": {
+      "name": "tpl_storage_lines",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'tpls' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invoice_cycle": {
+          "name": "invoice_cycle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "storage_type": {
+          "name": "storage_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qty_on_hand": {
+          "name": "qty_on_hand",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cubic_volume": {
+          "name": "cubic_volume",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billed_amount": {
+          "name": "billed_amount",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "audit_status": {
+          "name": "audit_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        }
+      },
+      "indexes": {
+        "idx_tpls_audit": {
+          "name": "idx_tpls_audit",
+          "columns": [
+            {
+              "expression": "audit_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_tpls_cycle": {
+          "name": "idx_tpls_cycle",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "invoice_cycle",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.upload_logs": {
+      "name": "upload_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'upl' || replace(gen_random_uuid()::text, '-', '')"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rows": {
+          "name": "rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "staged": {
+          "name": "staged",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "skipped": {
+          "name": "skipped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "data_health": {
+          "name": "data_health",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ok'"
+        }
+      },
+      "indexes": {
+        "idx_upload_logs_client": {
+          "name": "idx_upload_logs_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

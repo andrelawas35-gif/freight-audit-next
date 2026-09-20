@@ -1,0 +1,4 @@
+{
+  "_note": "Neon endpoint names (NOT credentials) that destructive db commands must refuse to target. Add the production endpoint here. See db/guard.ts and WO 2026-09-20-001.",
+  "protectedEndpoints": ["ep-frosty-frost-a6yzgmv2"]
+}

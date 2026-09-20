@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 2: The Core Flow Stages</title>
+    <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+    <h1>Lesson 2: The Core Flow Stages</h1>
+    
+    <p>In this lesson, we will break down the journey of a single piece of freight data as it moves through the six stages of our post-shipment pipeline.</p>
+
+    <div class="card">
+        <h2>Stage 1: Ingestion</h2>
+        <p>This is where data enters the platform. We ingest data from five canonical sources:</p>
+        <ul>
+            <li><strong>Carrier APIs:</strong> JSON carrier invoices</li>
+            <li><strong>EDI 210:</strong> Electronic Data Interchange transactions</li>
+            <li><strong>WMS CSV:</strong> Client Warehouse Management System exports (Shipments)</li>
+            <li><strong>3PL APIs:</strong> Fulfillment and storage feeds</li>
+            <li><strong>SFTP Polling:</strong> Automated drops of carrier files</li>
+        </ul>
+        <p>Every ingestion event creates an <strong>Ingestion Batch</strong> (tracking row counts and status) and leaves raw records untouched.</p>
+    </div>
+
+    <div class="card">
+        <h2>Stage 2: Normalization</h2>
+        <p>The platform must protect its downstream systems from carrier-specific quirks. Normalization acts as a shield.</p>
+        <p>Source-specific adapters take the raw payloads and transform them into a canonical format using functions like <code>stageInvoice()</code> and <code>stageShipment()</code>.</p>
+        <p>A key part of this stage is <strong>Code Mapping</strong>. If we encounter a carrier surcharge code we haven't seen before, an exception is created. The <strong>Data Clerk AI</strong> proposes a mapping to our platform standard codes. A human analyst confirms the suggestion, and the mapping becomes <em>Learned</em>.</p>
+    </div>
+
+    <div class="card">
+        <h2>Stage 3: The Audit Engine</h2>
+        <p>Once data is cleanly staged, the operational audit engine (Parcel or 3PL) gets to work. It processes jobs from a Postgres-backed <code>audit_jobs</code> queue.</p>
+        <p>The engine evaluates the shipments and invoices against the <strong>Rulebook</strong>. Rules are evaluated in strict precedence order: Contract rules > Carrier rules > Global rules.</p>
+        <p>If a violation (like an overcharge or invalid accessorial) is found, the engine produces an <strong>Audit Result</strong> (also called a Finding).</p>
+    </div>
+
+    <div class="card">
+        <h2>Stages 4, 5, and 6: Findings, Disputes, and Recovery</h2>
+        <p><strong>4. Findings Queue:</strong> Audit Results are queued up for Staff Review. Staff can bulk-file or dismiss these findings.</p>
+        <p><strong>5. Disputes:</strong> Findings that are filed become <strong>Disputes</strong>. This is a formal challenge to the carrier. We use AI (Response Parser) to read carrier responses and update the dispute state (e.g., won, dismissed, partial, appealed).</p>
+        <p><strong>6. Recovery:</strong> Successful disputes result in recovered cash for the client. But the journey doesn't end there! These findings are tagged with <strong>Behavioral Tags</strong> (e.g., <code>PREVENTABLE_BY_GATEWAY</code>) to feed into the pre-shipment Readiness Assessment, turning today's loss into tomorrow's prevention.</p>
+    </div>
+
+    <div class="quiz-section">
+        <h2>Knowledge Check</h2>
+        <div class="quiz-question">What happens during the Normalization stage if an unknown carrier surcharge code is encountered?</div>
+        <div class="quiz-options" id="quiz1">
+            <div class="quiz-option" onclick="checkAnswer(this, false)">The Audit Engine immediately flags it as a billing error and creates an Audit Result.</div>
+            <div class="quiz-option" onclick="checkAnswer(this, true)">An exception is created, the Data Clerk AI proposes a mapping, and a human analyst must confirm it before it becomes learned.</div>
+            <div class="quiz-option" onclick="checkAnswer(this, false)">The Data Clerk AI automatically maps it to a standard code and allows the pipeline to continue without human intervention.</div>
+        </div>
+        <div id="feedback1" class="feedback"></div>
+    </div>
+
+    <script>
+        function checkAnswer(element, isCorrect) {
+            const options = element.parentElement.children;
+            for (let opt of options) {
+                opt.classList.remove('correct', 'incorrect');
+                opt.style.pointerEvents = 'none';
+            }
+            
+            const feedback = element.parentElement.nextElementSibling;
+            feedback.classList.add('show');
+
+            if (isCorrect) {
+                element.classList.add('correct');
+                feedback.style.color = 'var(--success)';
+                feedback.textContent = 'Correct! Remember our invariant: AI is suggest-only. A human must confirm the Data Clerk\'s proposed mapping.';
+            } else {
+                element.classList.add('incorrect');
+                feedback.style.color = 'var(--error)';
+                feedback.textContent = 'Not quite. The system has a strict invariant that AI is suggest-only and never auto-applies mappings or changes without human confirmation.';
+                
+                // Highlight correct answer
+                for (let opt of options) {
+                    if (opt.getAttribute('onclick').includes('true')) {
+                        opt.classList.add('correct');
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

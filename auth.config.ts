@@ -1,0 +1,113 @@
+/*
+  auth.config.ts — edge-safe Auth.js config.
+
+  This file is imported by middleware (which runs in the Edge runtime), so it
+  must NOT import anything Node-only (no bcrypt, no DB driver). The actual
+  Credentials provider with DB lookups is added in auth.ts.
+
+  The `authorized` callback here is what protects routes:
+    - /login, /signup           → public (redirect away if already signed in)
+    - /portal/*                 → any signed-in user (clients + staff)
+    - everything else (console) → staff only
+*/
+
+import type { NextAuthConfig } from 'next-auth';
+
+export const authConfig = {
+  // Trust the deployment host (required for self-hosted / `next start`;
+  // Vercel sets this automatically, but being explicit is safe everywhere).
+  trustHost: true,
+  pages: {
+    signIn: '/login',
+  },
+  session: { strategy: 'jwt' },
+  providers: [], // real providers are added in auth.ts (keeps this edge-safe)
+  callbacks: {
+    authorized({ auth, request: { nextUrl } }) {
+      const isLoggedIn = !!auth?.user;
+      const role = (auth?.user as { role?: string } | undefined)?.role;
+      const { pathname } = nextUrl;
+
+      // ── 1. Auth.js handler — must be public (sign in/out, session, csrf) ──
+      if (pathname.startsWith('/api/auth/')) return true;
+
+      // ── 2. Auth pages (login, signup) — public; redirect if already signed in ──
+      const isAuthPage =
+        pathname.startsWith('/login') || pathname.startsWith('/signup');
+
+      if (isAuthPage) {
+        if (isLoggedIn) {
+          return Response.redirect(
+            new URL(role === 'staff' ? '/console' : '/portal', nextUrl)
+          );
+        }
+        return true;
+      }
+
+      // ── 3. API routes with their own auth — public at middleware level ──
+      if (
+        pathname.startsWith('/api/ingest/') ||
+        pathname.startsWith('/api/cron/') ||
+        pathname.startsWith('/api/run-audit/') ||
+        pathname.startsWith('/api/v1/precheck') ||
+        pathname === '/api/health'
+      ) {
+        return true;
+      }
+
+      // ── 4. Marketing site — public ──
+      const isMarketingPath =
+        pathname === '/' ||
+        pathname.startsWith('/about') ||
+        pathname.startsWith('/pricing') ||
+        pathname.startsWith('/blog') ||
+        pathname.startsWith('/contact') ||
+        pathname.startsWith('/terms') ||
+        pathname.startsWith('/privacy');
+
+      if (isMarketingPath) return true;
+
+      // ── 5. Require auth for all remaining routes ──
+      if (!isLoggedIn) return false; // → redirected to signIn page
+
+      // ── 6. Portal is open to any authenticated user ──
+      if (pathname.startsWith('/portal')) return true;
+
+      // ── 7. Console is staff only ──
+      if (pathname.startsWith('/console')) {
+        if (role !== 'staff') {
+          return Response.redirect(new URL('/portal', nextUrl));
+        }
+        return true;
+      }
+
+      // ── 8. Catch-all: deny (new routes default to protected) ──
+      return false;
+    },
+    jwt({ token, user }) {
+      if (user) {
+        const u = user as {
+          id?: string;
+          role?: string;
+          client_id?: string | null;
+          clientId?: string | null;
+          is_taxonomy_admin?: boolean;
+        };
+        token.id = u.id ?? token.id;
+        token.role = u.role ?? 'client';
+        token.clientId = u.client_id ?? u.clientId ?? null;
+        token.isTaxonomyAdmin = u.is_taxonomy_admin ?? false;
+      }
+      return token;
+    },
+    session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = (token.role as string) ?? 'client';
+        session.user.clientId = (token.clientId as string | null) ?? null;
+        session.user.isTaxonomyAdmin = (token.isTaxonomyAdmin as boolean) ?? false;
+      }
+      return session;
+    },
+  },
+} satisfies NextAuthConfig;

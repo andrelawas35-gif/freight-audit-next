@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesson 1: High-Level System Design</title>
+    <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+    <h1>Lesson 1: High-Level System Design (The Ecosystem View)</h1>
+    
+    <p>Welcome to the Freight Audit Platform! Today, we're zooming out to look at the entire ecosystem. Understanding this flow is crucial before diving into the code.</p>
+
+    <div class="card">
+        <h2>The Core Flow</h2>
+        <p>The product fundamentally starts as a post-shipment billing audit platform, but it is evolving into a pre-shipment compliance gateway. Here is the architecture of how data moves:</p>
+        
+        <div class="diagram">INGESTION -> NORMALIZATION -> AUDIT ENGINE -> FINDINGS QUEUE -> DISPUTES -> RECOVERY
+    |              |              |               |              |
+ Carrier APIs   stageInvoice()  Parcel engine   Staff review   Response parser
+ EDI 210        stageShipment() 3PL engine      File/dismiss   Outcome learning
+ SFTP auto      3PL staging     Rulebook        Bulk ops       Filing templates
+ Client WMS     Code mapping    Job queue
+ CSV upload     Data clerk AI
+                                |
+                                v
+                    BEHAVIORAL TAGS -> GATEWAY READINESS -> PRE-SHIPMENT PRODUCT ROADMAP</div>
+    </div>
+
+    <div class="card">
+        <h2>Key Concepts to Understand</h2>
+        
+        <h3>1. The Two Engines</h3>
+        <p>There is a critical distinction in the platform between what recovers money <em>today</em> and what prevents loss <em>tomorrow</em>.</p>
+        <ul>
+            <li><strong>Audit Engine (Operational):</strong> The legacy engines (Parcel and 3PL) that run post-shipment. They look for carrier overcharges based on the <code>rulebook</code> and produce <strong>Billing Findings</strong>. This drives cash recovery.</li>
+            <li><strong>Policy Evaluator (Strategic):</strong> The new evaluator that reads structured <code>policy_rules</code>. It runs in either <code>'backtest'</code> mode (post-shipment) or <code>'pre_shipment'</code> mode. It drives readiness assessments and will power the future Gateway.</li>
+        </ul>
+
+        <h3>2. Normalization is the Shield</h3>
+        <p>The audit engine <strong>never</strong> touches raw carrier payloads. The step between INGESTION and the AUDIT ENGINE is NORMALIZATION. Source-specific adapters transform raw payloads into canonical staging rows. Code mapping resolves carrier-specific codes to platform codes.</p>
+        
+        <h3>3. AI is Suggest-Only</h3>
+        <p>This is a core invariant of the system. While AI is used for parsing disputes and as a data clerk for mapping codes, it <strong>only proposes</strong>. A human must always confirm before a mapping is learned or a rule is applied.</p>
+    </div>
+
+    <div class="quiz-section">
+        <h2>Knowledge Check</h2>
+        <div class="quiz-question">What is the primary difference between the Audit Engine and the Policy Evaluator?</div>
+        <div class="quiz-options" id="quiz1">
+            <div class="quiz-option" onclick="checkAnswer(this, false)">The Audit Engine uses AI to automatically file disputes, while the Policy Evaluator requires human review.</div>
+            <div class="quiz-option" onclick="checkAnswer(this, true)">The Audit Engine is operational and finds overcharges post-shipment, while the Policy Evaluator is strategic and powers pre-shipment prevention.</div>
+            <div class="quiz-option" onclick="checkAnswer(this, false)">The Audit Engine handles 3PL fulfillment, while the Policy Evaluator handles carrier API ingestion.</div>
+        </div>
+        <div id="feedback1" class="feedback"></div>
+    </div>
+
+    <script>
+        function checkAnswer(element, isCorrect) {
+            const options = element.parentElement.children;
+            for (let opt of options) {
+                opt.classList.remove('correct', 'incorrect');
+                opt.style.pointerEvents = 'none';
+            }
+            
+            const feedback = element.parentElement.nextElementSibling;
+            feedback.classList.add('show');
+
+            if (isCorrect) {
+                element.classList.add('correct');
+                feedback.style.color = 'var(--success)';
+                feedback.textContent = 'Correct! The Audit Engine recovers money today, while the Policy Evaluator prevents loss tomorrow.';
+            } else {
+                element.classList.add('incorrect');
+                feedback.style.color = 'var(--error)';
+                feedback.textContent = 'Not quite. Remember that the Audit Engine is for legacy post-shipment recovery, and the Policy Evaluator is for strategic pre-shipment prevention.';
+                
+                // Highlight correct answer
+                for (let opt of options) {
+                    if (opt.getAttribute('onclick').includes('true')) {
+                        opt.classList.add('correct');
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
