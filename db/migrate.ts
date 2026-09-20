@@ -18,6 +18,7 @@
 import { Pool } from '@neondatabase/serverless';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { assertNotProduction } from './guard';
 
 // ── Configuration ──────────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ async function main() {
     err('FATAL: DATABASE_URL or TEST_DATABASE_URL must be set in environment.');
     process.exit(1);
   }
+
+  // Refuse production unless deliberately overridden (WO 2026-09-20-001).
+  assertNotProduction(DATABASE_URL, { command: 'db/migrate.ts' });
 
   log('E1 · Migration Runner');
   log('────────────────────');
